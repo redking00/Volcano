@@ -1,0 +1,154 @@
+@font-face {
+    font-family: sourcecodepro;
+    src: url('fonts/SourceCodePro-Regular.ttf');
+}
+@font-face {
+    font-family: sourcecodeprobold;
+    src: url('fonts/SourceCodePro-Bold.ttf');
+}
+
+html,
+body {
+    position: absolute;
+    padding: 0;
+    margin: 0;
+    width:100%;
+    height:100%;
+    background-color: black;
+    overflow:hidden;
+
+}
+
+body {
+/*    font-family: -apple-system, 'Helvetica Neue', Helvetica, sans-serif;*/
+    font-family: sourcecodepro;
+    font-size: 12px;
+}
+
+#editor {
+    position: absolute;
+    padding: 0;
+    margin: 0;
+    width:100%;
+    top: 0px;
+    bottom: 25px;
+    background-color: black;
+}
+
+#statusbar {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    cursor: default;
+    position: absolute;
+    margin: 0px;
+    width: 100%;
+    height: 25px;
+    left: 0px;
+    bottom: 0px;
+    background-color:#3760a9;
+    color: white;
+    padding: 0px 5px 0px 5px;
+    box-sizing: border-box;
+    font-size: 12px;
+    line-height: 25px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+#statusbar > table {
+    width:100%;
+    height:100%;
+    padding:0px;
+    margin:0px;
+    border-collapse: collapse;
+    color: white;
+    table-layout:fixed;
+}
+#message {
+    padding: 0px 5px 0px 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+#textpos {
+    width: 75px;
+    min-width:75px;
+    text-align:center;
+    border-left: 1px solid #2d0044;
+    padding: 0px 5px 0px 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+
+.CodeMirror {
+    font-family: sourcecodepro !important;
+    height: 100% !important;
+}
+
+.CodeMirror-scrollbar-filler {
+    background-color: #2f2f2f !important;
+}
+
+::-webkit-scrollbar-track
+{
+    border-radius: 0px;
+    background-color: #2f2f2f;
+}
+
+::-webkit-scrollbar
+{
+    width: 10px;
+    height: 10px;
+    background-color: #2f2f2f;
+}
+
+::-webkit-scrollbar-thumb
+{
+    border-radius: 0px;
+    -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,.3);
+    background-color: #555;
+}
+
+.gut-info {
+    width: 18px;
+    box-sizing:border-box;
+    margin-left: 0px;
+    z-index: 5000 !important;
+}
+
+.gutter-error {
+    color: #ff1313;
+    font-size: 14px!important;
+    line-height: 14px!important;
+    padding: 0px;
+    margin: 0px;
+    z-index: 5000 !important;
+    vertical-align:bottom;
+}
+
+.gutter-error > .tooltip {
+    position: absolute;
+    top: 20px;
+    left: 25px;
+    display: inline;
+    background: rgba(255,0,0,0.9);
+    color: #FFF;
+    font-size: 12px;
+    padding: 5px 5px 5px 5px;
+    border-radius: 5px;
+    font-family: sourcecodepro;
+    z-index: 5000 !important;
+    white-space: nowrap;
+}
+
+.scrollbar-error-annotation {
+    background: #ff0000;
+    border-top: 1px solid #ff0000;
+    border-bottom: 1px solid #ff0000;
+    -moz-box-sizing: border-box;
+    box-sizing: border-box;
+    opacity: .5;
+}
+

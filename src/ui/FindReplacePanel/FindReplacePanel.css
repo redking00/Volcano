@@ -1,0 +1,220 @@
+
+.FindReplace-panel {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    cursor: default;
+    position:absolute;
+    display:block;
+    top:0px;
+    left:0px;
+    width:100%;
+    margin:0px;
+    padding: 5px 0px 5px 5px;
+    font-size: 0.85em;
+    white-space: nowrap;
+    min-width:600px;
+    color: #e3e3e3;
+    background-color:#3e3e3e;
+    overflow: hidden;
+}
+
+.FindReplace-panel > #fcspn {
+    font-family:sourcecodeprobold;
+    margin-left: 30px;
+    font-size: 12px;
+}
+
+.FindReplace-panel input[type=text] {
+    -webkit-user-select: auto;
+    background-color: #4e4e4e;
+    color: white;
+    margin-left: 10px;
+    margin-right:5px;
+    padding: 3px 10px 3px 10px;
+    box-sizing: border-box;
+    border: 2px solid #6b6b6b;
+    font-family:sourcecodepro;
+    font-size: 10px;
+    border-radius: 12px;
+    width: 250px;
+}
+
+.FindReplace-panel input[type=text]::selection {
+    background:rgba(88, 101, 255, 0.62);
+}
+
+.FindReplace-panel .match {
+    border: 2px solid lightgreen !important;
+    background-color: rgba(0, 255, 0, 0.06) !important;
+
+}
+
+.FindReplace-panel .nomatch  {
+    border: 2px solid red !important;
+    background-color: rgba(255, 0, 0, 0.06) !important;
+}
+
+
+.FindReplace-panel input[type=text]:focus{
+    outline: none;
+    border: 2px solid cornflowerblue;
+}
+
+.FindReplace-panel input[type=text]::-webkit-input-placeholder {
+    color:rgba(193, 193, 193, 0.49);
+}
+
+.FindReplace-panel #rtext {
+    margin-top:7px;
+}
+
+.FindReplace-panel button {
+    margin-left: 0px;
+    margin-right:2px;
+    font-size:12px;
+    background-color:rgba(0,0,0,0);
+    color:cornflowerblue;
+    display:inline-block;
+    vertical-align:bottom;
+    box-sizing:border-box;
+    border:1px solid rgba(255, 255, 255, 0);
+    height:22px;
+    width:20px;
+    border-radius:4px;
+    padding:0px;
+    cursor:pointer;
+    font-family:sourcecodepro;
+}
+
+.FindReplace-panel #fpbut {
+    font-family: FontAwesome;
+}
+
+.FindReplace-panel #fnbut {
+    font-family: FontAwesome;
+}
+
+
+
+.FindReplace-panel button[disabled] {
+    color:#585858;
+    cursor:initial;
+}
+
+.FindReplace-panel button[disabled]:hover{
+    color:#585858;
+    border:1px solid rgba(255, 255, 255, 0);
+    background-color:rgba(0,0,0,0);
+}
+
+.FindReplace-panel button:hover{
+    background-color:#5f5f5f;
+    border:1px solid #888888;
+}
+
+.FindReplace-panel button:focus{
+    outline:none;
+}
+
+.FindReplace-panel .repbut {
+    position:relative;
+    width:initial;
+    border: 1px solid rgb(130, 130, 130);
+    padding: 0px 5px 0px 5px;
+    font-size:10px;
+    color:#d6d6d6;
+    background-color:rgb(97, 97, 97);
+    margin-right:5px;
+}
+
+.FindReplace-panel .repbut[disabled] {
+    color:grey;
+    background-color:rgba(224, 223, 223, 0.09);
+}
+
+.FindReplace-panel .repbut:hover {
+    border: 1px solid rgb(177, 177, 177) !important;
+    background-color:rgb(125, 125, 125) !important;
+}
+
+.FindReplace-panel .repbut[disabled]:hover {
+    border: 1px solid rgb(130, 130, 130) !important;
+    background-color:rgba(224, 223, 223, 0.09) !important;
+    color:grey !important;
+}
+
+
+.FindReplace-panel #fcbut {
+    position: absolute;
+    right: 15px;
+    top: 7px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+
+
+
+.toggleButton {
+    width: 49px;
+    height: 12px;
+    background: #333;
+    border-radius: 25px;
+    position: relative;
+    display: inline-block;
+    top: 9px;
+    margin-left: 10px;
+}
+
+.toggleButton input{
+    display:none;
+}
+
+.toggleButton:before {
+    content: 'On';
+    position: absolute;
+    top: 0px;
+    left: 5px;
+    height: 1px;
+    color: cornflowerblue;
+    font-size: 10px;
+}
+
+.toggleButton:after {
+    content: 'Off';
+    position: absolute;
+    top: 0px;
+    left: 27px;
+    height: 1px;
+    color: #7b7b7b;
+    font-size: 10px;
+}
+
+.toggleButton label {
+    display: block;
+    width: 20px;
+    height: 10px;
+    border-radius: 25px;
+    transition: all .5s ease;
+    cursor: pointer;
+    position: absolute;
+    top: 1px;
+    z-index: 1;
+    left: 5px;
+    background: #ddd;
+}
+
+.toggleButton input[type=checkbox]:checked + label {
+    left: 24px;
+    background: cornflowerblue;
+}
+
+.toggleButton > div {
+    position:absolute;
+    top: 0px;
+    left:0px;
+    margin-top: -13px;
+    margin-left: -6px;
+    font-size: 10px;
+    color:silver;
+}

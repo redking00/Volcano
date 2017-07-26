@@ -1,0 +1,872 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Volcano assembler/disassembler</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="stylesheet" href="font-awesome-4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="codemirror/lib/codemirror.css">
+    <link rel="stylesheet" href="codemirror/theme/volcano.css">
+    <link rel="stylesheet" href="codemirror/addon/search/matchesonscrollbar.css">
+    <link rel="stylesheet" href="vex/css/vex.css">
+    <link rel="stylesheet" href="vex/css/vex-theme-volcano.css">
+    <link rel="stylesheet" href="FindReplacePanel/FindReplacePanel.css">
+
+    <script src="util/extend.js"></script>
+    <script src="FindReplacePanel/FindReplacePanel.js"></script>
+    <script src="codemirror/lib/codemirror.js"></script>
+    <script src="codemirror/addon/search/searchcursor.js"></script>
+    <script src="codemirror/addon/search/matchesonscrollbar.js"></script>
+    <script src="codemirror/addon/scroll/annotatescrollbar.js"></script>
+    <script src="codemirror/mode/krakatau.js"></script>
+</head>
+
+<body>
+    <div id="editor"></div>
+    <div id="statusbar">
+        <table>
+            <tr><td id="message">Welcome to Volcano!</td><td id="textpos"></td></tr>
+        </table>
+    </div>
+</body>
+
+<script>
+    let rolling = 1148;
+    let debug = false;
+    let currentFilePath;
+    let currentOutputPath;
+    let dirty = false;
+    let changeTimer;
+    let messageElement = document.querySelector('#message');
+    let textposElement = document.querySelector('#textpos');
+
+    const vex = require('./vex/js/vex.combined.min.js');
+
+    const {remote} = require('electron');
+
+    const argFile = remote.getCurrentWindow().argFile;
+
+    const {Menu, dialog, process} = remote;
+
+    const system = process.platform + '-' + process.arch;
+
+    const fs = remote.require('fs');
+
+    const path = remote.require('path');
+
+    const https = remote.require('https');
+
+    const kasmPath = path.resolve(__dirname, '..', 'krakatau', system, 'kasm');
+
+    const menu = Menu.buildFromTemplate([
+        {
+            label: 'File',
+            submenu: [
+                {label: 'New file', accelerator: 'CmdOrCtrl+N', click() {
+                    newFile();
+                }},
+                {label: 'New window', accelerator: process.platform === 'darwin' ? 'Alt+Cmd+N' : 'Ctrl+Shift+N', click() {
+                    remote.getGlobal('openFile')();
+                }},
+                {label: 'Open file', accelerator: 'CmdOrCtrl+O', click(){
+                    showLoadFileDialog(false);
+                }},
+                {label: 'Open file (New window)', accelerator: process.platform === 'darwin' ? 'Alt+Cmd+O' : 'Ctrl+Shift+O', click() {
+                    showLoadFileDialog(true);
+                }},
+                {label: 'Save file', accelerator: 'CmdOrCtrl+S', click(){
+                    if (currentFilePath) {
+                        saveFile(currentFilePath);
+                    }
+                    else showSaveFileDialog();
+                }},
+                {label: 'Save file as...', accelerator: process.platform === 'darwin' ? 'Alt+Cmd+S' : 'Ctrl+Shift+S', click(){
+                    showSaveFileDialog();
+                }},
+                {type: 'separator'},
+                {label: 'Close', role: 'close'}
+            ]
+        },
+        {
+            label:'Edit',
+            submenu:[
+                { label: 'Undo',        accelerator: 'CmdOrCtrl+Z', role:'undo' },
+                { label: 'Redo',        accelerator: 'CmdOrCtrl+Y', role:'redo' },
+                {type: 'separator'},
+                { label: 'Cut',         accelerator: 'CmdOrCtrl+X', role:'cut' },
+                { label: 'Copy',        accelerator: 'CmdOrCtrl+C', role:'copy' },
+                { label: 'Paste',       accelerator: 'CmdOrCtrl+V', role:'paste' },
+                { label: 'Delete',      accelerator: 'CmdOrCtrl+D', role:'delete' },
+                {type: 'separator'},
+                { label: 'Find',        accelerator: 'CmdOrCtrl+F' ,
+                    click() { findReplacePanel.open(false,editor.getSelection()); }
+                },
+                { label: 'Find and replace',
+                    accelerator: process.platform === 'darwin' ? 'Alt+Cmd+F' : 'Ctrl+Shift+F' ,
+                    click() { findReplacePanel.open(true,editor.getSelection()); }
+                },
+                { label: 'Select all',  accelerator: 'CmdOrCtrl+A',
+                    click(){ editor.execCommand('selectAll'); }
+                },
+            ]
+        },
+        {
+            label: 'Build',
+            submenu: [
+                {
+                    label: 'Assemble', accelerator: 'F5', click(){
+                        function doAsm() {
+                            if (currentOutputPath) assemble(currentFilePath,currentOutputPath);
+                            else {
+                                dialog.showOpenDialog(
+                                    remote.getCurrentWindow(),
+                                    {
+                                        title: 'Select assembler output folder',
+                                        properties: ['openDirectory', 'createDirectory']
+                                    },
+                                    function (folderNames) {
+                                        if (folderNames) {
+                                            currentOutputPath = folderNames[0];
+                                            assemble(currentFilePath, currentOutputPath);
+                                        }
+                                    }
+                                );
+                            }
+                        }
+                        if (currentFilePath) {
+                            if (dirty) saveFile(currentFilePath);
+                            doAsm();
+                        }
+                        else showSaveFileDialog(()=>{ if (currentFilePath) doAsm(); });
+                    }
+                },
+                {
+                    label: 'Assemble to...', accelerator: 'F6', click(){
+                        function doAsmTo() {
+                            dialog.showOpenDialog(
+                                remote.getCurrentWindow(),
+                                {
+                                    title: 'Select assembler output folder',
+                                    properties: ['openDirectory', 'createDirectory']
+                                },
+                                function (folderNames) {
+                                    if (folderNames) {
+                                        currentOutputPath = folderNames[0];
+                                        assemble(currentFilePath, currentOutputPath);
+                                    }
+                                }
+                            );
+                        }
+                        if (currentFilePath) {
+                            if (dirty) saveFile(currentFilePath);
+                            doAsmTo();
+                        }
+                        else showSaveFileDialog(()=>{ if (currentFilePath) doAsmTo(); });
+                    }
+                },
+            ]
+        },
+        {
+            label:'View', submenu:[
+                { label: 'Full Screen mode', accelerator:'F11', role:'togglefullscreen' }
+            ]
+        },
+        {
+            label:'Help', submenu:[
+                {
+                    label: 'Check for updates', click() {
+                        checkForUpdates(false);
+                    }
+                },
+                {
+                    label: 'About Volcano', click() {
+                        showAlert(
+                            '<span style="font-family:sourcecodeprobold">Volcano ' + formatVersion(rolling) + ' by Diego Vigorra</span><br>' +
+                            'https://github.com/redking00/Volcano<br><br><hr>' +
+                            'Krakatau Bytecode Tools by Robert Grosse<br>' +
+                            'Copyright (C) 2012-17<br>'+
+                            'https://github.com/Storyyeller/Krakatau<br><br><hr>' +
+                            'These programs are provided as open source under the GNU General Public License.<br>' +
+                            'Visit https://www.gnu.org/licenses/gpl-3.0.txt for more details'
+                        );
+                    }
+                }
+            ]
+        }
+    ]);
+
+    const contextMenu = Menu.buildFromTemplate([
+        { label: 'Cut',         accelerator: 'CmdOrCtrl+X', role:'cut' },
+        { label: 'Copy',        accelerator: 'CmdOrCtrl+C', role:'copy' },
+        { label: 'Paste',       accelerator: 'CmdOrCtrl+V', role:'paste' },
+        { label: 'Delete',      accelerator: 'CmdOrCtrl+D', role:'delete' },
+        {type: 'separator'},
+        { label: 'Find',        accelerator: 'CmdOrCtrl+F' ,
+            click() {
+                findReplacePanel.open(false,editor.getSelection());
+            }
+        },
+        { label: 'Find and replace',
+            accelerator: process.platform === 'darwin' ? 'Alt+Cmd+F' : 'Ctrl+Shift+F' ,
+            click() { findReplacePanel.open(true,editor.getSelection()); }
+        },
+        { label: 'Select all',  accelerator: 'CmdOrCtrl+A',
+            click(){ editor.execCommand('selectAll'); }
+        },
+    ]);
+
+    const editor = CodeMirror(window.document.getElementById('editor'), {
+        dragDrop:false,
+        lineNumbers: true,
+        styleActiveLine: true,
+        gutters:['CodeMirror-linenumbers','gut-info'],
+        indentWithTabs:false,
+        extraKeys: {
+            Tab: (cm) => {
+                if (cm.somethingSelected()) {
+                    cm.indentSelection("add");
+                    return;
+                }
+                cm.execCommand("insertSoftTab");
+            },
+            "Shift-Tab": (cm) => {
+                cm.indentSelection("subtract");
+            }
+        }
+    });
+
+    const findReplacePanel = new FindReplacePanel(editor);
+
+    const updateURL = 'https://github.com/redking00/Volcano/raw/master/updates/' + system + '/';
+
+    function formatVersion(rolling) {
+        let rollingStr = ''+rolling;
+        let min = rollingStr.slice(-3);
+        let max = rollingStr.slice(0,rollingStr.length -3);
+        return 'v.' + max + ' (build ' + min + ')';
+    }
+
+    function setDirty() {
+        if (!dirty) {
+            dirty = true;
+            updateTitle();
+            setStatusBarMessage(((currentFilePath)? currentFilePath:'Untitled.j') +' > modified.');
+            editor.getMode().clearAsmErrors();
+        }
+    }
+
+    function clearDirty() {
+        dirty = false;
+        updateTitle();
+        editor.getMode().clearAsmErrors();
+    }
+
+    function setStatusBarMessage(msg) {
+        let time = new Date();
+        let timeStr =
+            ("0" + time.getHours()).slice(-2)   + ":" +
+            ("0" + time.getMinutes()).slice(-2) + ":" +
+            ("0" + time.getSeconds()).slice(-2);
+        messageElement.innerText = timeStr + ' > ' + msg;
+    }
+
+    function updateTitle() {
+        remote.getCurrentWindow().setTitle(
+            ('[' + ((currentFilePath)? currentFilePath:'Untitled.j') + ']'+(dirty?' *':'')) +
+            '   -   Volcano ' + formatVersion(rolling)
+        );
+    }
+
+    function showConfirmSaveChangesDialog(yes,no,cancel) {
+        showYesNoCancelDialog('Do you want to save the changes in current file?',yes,no,cancel);
+    }
+
+    function showAlert(msg) {
+        vex.dialog.alert({unsafeMessage:msg});
+    }
+
+    function showYesNoCancelDialog(msg,yes,no,cancel) {
+        let dlg = vex.dialog.confirm({
+            unsafeMessage: msg,
+            overlayClosesOnClick: false,
+            callback: function () {
+                let result = this.content.result;
+                if (result!==undefined) {
+                    if (result==='yes' && yes) yes();
+                    else if (no) no();
+                }
+                else if (cancel) cancel();
+            },
+            buttons: [
+                extend(vex.dialog.buttons.NO,{ text: 'Cancel', click: function() {
+                    vex.close(this.id.toString());
+                }}),
+                extend(vex.dialog.buttons.NO,{ text: 'No', click: function() {
+                    this.form.result = 'no';
+                    vex.close(this.id.toString());
+                }}),
+                extend(vex.dialog.buttons.YES,{ text: 'Yes', click: function() {
+                    this.form.result = 'yes';
+                }}),
+            ]
+        });
+        dlg.rootEl.querySelector('.vex-dialog-button-primary').focus();
+    }
+
+    function showYesNoDialog(msg,yes,no) {
+        let dlg = vex.dialog.confirm({
+            unsafeMessage: msg,
+            overlayClosesOnClick: false,
+            callback: function () {
+                let result = this.content.result;
+                if (result!==undefined) {
+                    if (result==='yes' && yes) yes();
+                    else if (no) no();
+                }
+                else if (no) no();
+            },
+            buttons: [
+                extend(vex.dialog.buttons.NO,{ text: 'No', click: function() {
+                    this.form.result = 'no';
+                    vex.close(this.id.toString());
+                }}),
+                extend(vex.dialog.buttons.YES,{ text: 'Yes', click: function() {
+                    this.form.result = 'yes';
+                }}),
+            ]
+        });
+        dlg.rootEl.querySelector('.vex-dialog-button-primary').focus();
+    }
+
+    function showLoadFileDialog(newwindow,callback) {
+        function showOpenDialog(newwindow,callback){
+            dialog.showOpenDialog(
+                remote.getCurrentWindow(),
+                {
+                    filters: [
+                        { extensions: ['j','class','jar'],  name:'All supported formats'},
+                        { extensions: ['j'],        name:'Krakatau source'},
+                        { extensions: ['class'],    name:'Java class'},
+                        { extensions: ['jar'],      name:'Java jar'}
+                    ],
+                    properties:['multiSelections']
+                },
+                function (fileNames) {
+                    if (fileNames) {
+                        if (newwindow) {
+                            fileNames.forEach((file)=>{
+                                remote.getGlobal('openFile')(file);
+                            });
+                        }
+                        else {
+                            openFile(fileNames[0]);
+                            if (fileNames.length > 1) {
+                                for (let n = 1; n < fileNames.length; ++n) remote.getGlobal('openFile')(fileNames[n]);
+                            }
+                        }
+                    }
+                    if (callback) callback();
+                }
+            );
+        }
+
+        if (dirty && !newwindow){
+            showConfirmSaveChangesDialog(
+                ()=>{
+                    if (currentFilePath) {
+                        saveFile(currentFilePath);
+                        showOpenDialog(newwindow, callback);
+                    }
+                    else {
+                        showSaveFileDialog(()=>{
+                           showOpenDialog(newwindow, callback);
+                        });
+                    }
+                },
+                ()=>{ showOpenDialog(newwindow, callback); }
+            )
+        }
+        else showOpenDialog(newwindow, callback);
+
+    }
+
+    function showSaveFileDialog(callback) {
+        dialog.showSaveDialog(
+            remote.getCurrentWindow(),
+            {
+                filters: [
+                    { extensions: ['j'],        name:'Krakatau source'}
+                ],
+                defaultPath: (currentFilePath)? currentFilePath:'Untitled.j'
+            },
+            function (fileName) {
+                if (fileName) {
+                    saveFile(fileName);
+                    if (callback) callback();
+                }
+            }
+        );
+    }
+
+    function openFile(fileName) {
+        if (fileName.toLowerCase().endsWith(".class") || fileName.toLowerCase().endsWith(".jar")) {
+            function doDisAsm(roundtrip) {
+                dialog.showOpenDialog(
+                    remote.getCurrentWindow(),
+                    {
+                        title: 'Select disassembler output folder',
+                        properties: ['openDirectory', 'createDirectory']
+                    },
+                    function (folderNames) {
+                        if (folderNames) {
+                            disassemble(fileName, folderNames[0], roundtrip);
+                        }
+                    }
+                );
+            }
+            showYesNoCancelDialog(
+                'This file has to be disassembled, do you want to use roundtrip mode? <br>' +
+                '<span style="font-size:10px">(Roundtrip mode creates assembly files that can roundtrip to original binary)</span>',
+                ()=>{ doDisAsm(true); },
+                ()=>{ doDisAsm(false); },
+            );
+        }
+        else if (fileName.toLowerCase().endsWith(".j")) {
+            loadFile(fileName);
+        }
+        else showAlert('Can not open that file');
+
+    }
+
+    function newFile(callback) {
+        function clear(callback) {
+            editor.off('change', setDirty);
+            editor.setValue('');
+            editor.clearHistory();
+            editor.getMode().init();
+            currentFilePath = undefined;
+            currentOutputPath = undefined;
+            clearDirty();
+            updateTitle();
+            onCursorActivity();
+            editor.on('change', setDirty);
+            if (callback) callback();
+        }
+
+        if (dirty){
+            showConfirmSaveChangesDialog(
+                ()=>{
+                    if (currentFilePath) {
+                        saveFile(currentFilePath);
+                        clear(callback);
+                    }
+                    else {
+                        showSaveFileDialog(()=>{
+                            clear(callback);
+                        });
+                    }
+                },
+                ()=>{ clear(callback); }
+            )
+        }
+        else clear(callback);
+
+    }
+
+    function loadFile(filePath) {
+        editor.off('change',setDirty);
+        findReplacePanel.close();
+        try {
+            if (fs.existsSync(filePath)) {
+                let data = fs.readFileSync(filePath);
+                editor.setValue(data.toString().replace(/\t/g,'    '));
+                editor.clearHistory();
+                currentFilePath = filePath;
+                currentOutputPath = undefined;
+                clearDirty();
+                setStatusBarMessage(filePath +' > loaded.');
+                updateTitle();
+                onCursorActivity();
+                editor.getMode().init();
+            }
+            else {
+                showAlert(filePath + ' does not exist')
+                if (debug) console.log('File [' + filePath + '] does not exist');
+            }
+        }
+        catch(err) {
+            showAlert(err);
+            if (debug) console.log(err);
+        }
+        editor.on('change',setDirty);
+    }
+
+    function saveFile(filePath) {
+        if (debug) console.log('Saving file: [' + filePath + ']');
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.truncateSync(filePath, 0);
+            }
+            fs.writeFileSync(filePath, editor.getValue(), function (err) {
+                if (err) {
+                    return showAlert("Error writing file: " + err);
+                }
+            });
+            currentFilePath = filePath;
+            clearDirty();
+            setStatusBarMessage(currentFilePath + ' > saved.');
+            updateTitle();
+        }
+        catch(err) {
+            showAlert(err);
+            if (debug) console.log(err);
+        }
+    }
+
+    function disassemble(inputFile, outputDir, roundtrip) {
+        let stdoutput = '';
+        let stderror = '';
+        let lines = [];
+
+        setStatusBarMessage('Disassembling...');
+
+        const { spawn } = remote.require('child_process');
+        let params = ['-d', inputFile, '-out', outputDir];
+        if (roundtrip) params.push('-roundtrip');
+        const proc = spawn(kasmPath, params);
+
+        proc.stdout.on('data', (data) => {
+            stdoutput += data;
+            let templines = stdoutput.split('\n');
+            if (templines.length > 1) {
+                for (let n = 0; n < templines.length -2; ++n) {
+                    lines.push(templines[n]);
+                    if (templines[n].startsWith('processing target ')){
+                        let match = /(processing target )([^,]+)(, )(\d+)(\/)(\d+)( remaining)/.exec(templines[n]);
+                        if (match) {
+                            let msg = 'Processing target ' + (match[6]-match[4]+1) + ' of ' + match[6] + ' > ' + match[2];
+                            setStatusBarMessage(msg);
+                        }
+                    }
+                }
+                stdoutput = templines[templines.length-1];
+            }
+            if (debug) console.log(`stdout: ${data}`);
+        });
+
+        proc.stderr.on('data', (data) => {
+            stderror += data;
+            if (debug) console.log(`stderr: ${data}`);
+        });
+
+        proc.on('close', (code) => {
+            if (code == 0) {
+                if (stderror.length > 0) {
+                    showAlert('Disassembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
+                }
+                else {
+                    let templines = stdoutput.split('\n');
+                    lines.push(...templines);
+                    let results = [];
+                    for (let l in lines) {
+                        if (lines[l].startsWith('Class written to \\\\?\\')) {
+                            results.push(lines[l].replace('Class written to \\\\?\\','').replace(/(\r\n|\n|\r)/gm,''));
+                        }
+                    }
+                    if (results.length == 1) {
+                        loadFile(results[0]);
+                    }
+                    else {
+                        dialog.showOpenDialog(
+                            remote.getCurrentWindow(),
+                            {
+                                filters: [
+                                    { extensions:['j'],         name:'Krakatau source'}
+                                ],
+                                defaultPath: outputDir
+                            },
+                            function (fileNames) {
+                                if (fileNames) {
+                                    if (fileNames[0].endsWith(".j")) {
+                                        loadFile(fileNames[0]);
+                                    }
+                                    else showAlert('Can not open that file');
+                                }
+                            }
+                        );
+                    }
+                }
+            }
+            else showAlert('Disassembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
+
+            if (debug) console.log(`child process exited with code ${code}`);
+        });
+    }
+
+    function assemble(inputFile, outputDir) {
+        let stdoutput = "";
+        let stderror = ""
+
+        setStatusBarMessage('Building...');
+
+        const { spawn } = remote.require('child_process');
+
+        const proc = spawn(kasmPath, [inputFile, '-out', outputDir]);
+
+        proc.stdout.on('data', (data) => {
+            stdoutput += data;
+            if (debug) console.log(`stdout: ${data}`);
+        });
+
+        proc.stderr.on('data', (data) => {
+            stderror += data;
+            if (debug) console.log(`stderr: ${data}`);
+        });
+
+        proc.on('close', (code) => {
+            if (code == 0){
+                let lines = stdoutput.split('\n');
+                let results = [];
+                for (let l in lines) {
+                    if (lines[l].startsWith('Class written to \\\\?\\')) {
+                        results.push(lines[l].replace('Class written to \\\\?\\','').replace(/(\r\n|\n|\r)/gm,''));
+                    }
+                }
+                showAlert('Done.');
+                setStatusBarMessage(results[0] + ' > assembled.');
+            }
+            else if (code == 1) {
+                if (stderror.length > 0){
+                    let lines = stderror.split('\n');
+                    if (debug) console.log(lines[0]);
+                    let match = /([^:]+):(\d+):(\d+):( error: )(.*)/.exec(lines[0].replace(/(\r\n|\n|\r)/gm,''));
+                    if (match) {
+                        let file = match[1];
+                        let line = match[2];
+                        let col = match[3];
+                        let errordesc =
+                            match[5].trimRight() + '\n' +
+                            lines[1].replace(/(\r\n|\n|\r)/gm,'').trimRight() + '\n' +
+                            lines[2].replace(/(\r\n|\n|\r)/gm,'').trimRight();
+                        editor.scrollIntoView({line:line,ch:col});
+                        editor.getMode().addAssemblerError(line-1,errordesc);
+                        let asmlines = errordesc.split('\n');
+                        let htmlmsg =
+                            asmlines[0] +
+                            '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[1].replace(/ /g,'&nbsp;') +
+                            '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[2].replace(/ /g,'&nbsp;');
+                        showAlert('Assembler error (line ' + line + ', col ' + col + '):<br>' + htmlmsg);
+                        if (debug) console.log(match);
+                    }
+                    else showAlert('Assembler error: ' + stderror);
+                }
+            }
+            else showAlert('Assembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
+
+            if (debug) console.log(`child process exited with code ${code}`);
+        });
+    }
+
+    function clearErrorGutterOnEmptyLines() {
+        clearTimeout(changeTimer);
+        changeTimer = setTimeout(()=>{
+            let lineNumber = editor.getCursor().line;
+            if (editor.getLine(lineNumber).length === 0) {
+
+                editor.getMode().removeErrorGutterFromLine(lineNumber);
+            }
+        },500);
+
+    }
+
+    function onCursorActivity() {
+        let pos = editor.getCursor();
+        textposElement.innerText = (pos.line + 1) + ':' + (pos.ch + 1);
+    }
+
+    function onCloseQuery() {
+        if (dirty) {
+            showConfirmSaveChangesDialog(
+                ()=>{
+                    if (currentFilePath) {
+                        saveFile(currentFilePath);
+                        remote.getCurrentWindow().close();
+                    }
+                    else {
+                        showSaveFileDialog(()=>{
+                            remote.getCurrentWindow().close();
+                        });
+                    }
+                },
+                ()=>{ dirty = false; remote.getCurrentWindow().close(); }
+            );
+            return false;
+        }
+        else return null;
+    }
+
+    function downloadToString(url, onsuccess, onerror, num) {
+        if ( num > 10 ) {
+            if (debug) console.log( 'Too many redirects' );
+            onerror(-1);
+        }
+        let request = https.get(url + '?' + (new Date()).getTime(), (res) => {
+            switch(res.statusCode) {
+                case 200: break;
+                case 302: downloadToString(res.headers.location + '?' + (new Date()).getTime(), onsuccess, onerror, num + 1); return;
+                default: request.abort(); onerror(res.statusCode); return;
+            }
+            let data = '';
+            res.on('end',()=>{ onsuccess(data); });
+            res.on('data', (d) => { data+=d; });
+        }).on('error', (e) => { onerror(e) });
+    }
+
+    function downloadToFile(remote, local, onsuccess, onerror, num) {
+        if ( num > 10 ) {
+            if (debug) console.log( 'Too many redirects' );
+            onerror(-1);
+        }
+        let new_remote = null;
+        let write_file_ready = false;
+        let content_length;
+        let write_file;
+        let downloaded_bytes = 0;
+        let percent;
+
+        let request = https.get(remote + '?' + (new Date()).getTime(), (response) => {
+            switch(response.statusCode) {
+                case 200:
+                    content_length = response.headers['content-length'];
+                    if (debug) console.log('content-length: ' + content_length);
+                    break;
+                case 302:
+                    new_remote = response.headers.location + '?' + (new Date()).getTime();
+                    downloadToFile(new_remote, local, onsuccess, onerror, num+1 );
+                    return;
+                default:
+                    request.abort();
+                    onerror(response.statusCode);
+                    return;
+            }
+            response.on('end', () => { write_file.end(onsuccess); });
+            response.on('data', (chunk) => {
+                if(!write_file_ready) {
+                    write_file = fs.createWriteStream(local);
+                    write_file_ready = true;
+                }
+                write_file.write(chunk);
+                downloaded_bytes+=chunk.length;
+                percent = parseInt( (downloaded_bytes/content_length)*100 );
+                if (debug) console.log( percent );
+            });
+        });
+        request.on('error', (e) => { onerror(e); });
+    }
+
+    function checkForUpdates(quiet) {
+
+        function printGenericError() {
+            showAlert('Sorry, there was a problem, try later please.');
+            setStatusBarMessage('Update failed, try later.');
+        }
+
+        function printNetworkError() {
+            showAlert('Sorry, there was a network error, check your connection and/or try later.');
+            setStatusBarMessage('Network error, update failed, check your connection and/or try later.');
+        }
+
+
+        if (!quiet) setStatusBarMessage('Checking for updates...');
+
+        downloadToString(updateURL + 'latest',
+            (data)=>{
+                let latest = data.split('\n');
+                if (latest.length>1){
+                    let latestRolling = parseInt(latest[0]);
+                    if (!isNaN(latestRolling)) {
+                        if (latestRolling > rolling) {
+                            let patchFile = latest[1].replace(/(\r\n|\n|\r)/gm,'');
+                            if (patchFile.startsWith('#PATCH#')) {
+                                patchFile = patchFile.replace('#PATCH#','');
+                                showYesNoDialog(
+                                    'Updates available, do you want to download them now?', () => {
+                                        let installFolder = path.dirname(process.argv[0]);
+                                        let resourcesFolder = path.resolve(installFolder, 'resources');
+                                        let patchPath = path.resolve(resourcesFolder, patchFile);
+                                        downloadToFile(
+                                            updateURL + patchFile,
+                                            patchPath,
+                                            () => {
+                                                showYesNoDialog(
+                                                    'Must restart to apply updates, do you want to restart now?', () => {
+                                                        remote.getGlobal('restart')();
+                                                    });
+                                            },
+                                            (err) => {
+                                                if (debug) console.log(err);
+                                                printNetworkError();
+                                            }
+                                        );
+                                    }
+                                );
+                            }
+                            else showAlert(patchFile);
+                        }
+                        else if (!quiet) showAlert('Volcano is up to date!');
+                    }
+                    else if (!quiet) printGenericError();
+                }
+                else  if (!quiet) printGenericError();
+            },
+            (error)=>{
+                if (!quiet) printNetworkError();
+                if (debug) console.log(error);
+            }
+        );
+    }
+
+    window.onbeforeunload = onCloseQuery;
+
+    vex.defaultOptions.className = 'vex-theme-volcano';
+
+    remote.getCurrentWindow().setMenu(menu);
+
+    editor.setOption('theme', 'volcano');
+
+    editor.on('change',clearErrorGutterOnEmptyLines);
+
+    editor.on('cursorActivity',onCursorActivity);
+
+    editor.on('contextmenu', () => {
+        contextMenu.popup(remote.getCurrentWindow());
+    });
+
+    document.ondragover = document.ondrop = (ev) => {
+        ev.preventDefault()
+    };
+
+    document.body.ondrop = (ev) => {
+        if (debug) console.log(ev.dataTransfer.files);
+        ev.preventDefault();
+        if (ev.dataTransfer.files.length > 0) {
+            openFile(ev.dataTransfer.files[0].path);
+            if (ev.dataTransfer.files.length > 1) {
+                for (let n = 1; n < ev.dataTransfer.files.length; ++n)
+                    remote.getGlobal('openFile')(ev.dataTransfer.files[n].path);
+            }
+        }
+    };
+
+    setInterval(()=>{
+        if (remote.getGlobal('isMainWindow')(remote.getCurrentWindow())) checkForUpdates(true);
+    },3600000);
+
+    newFile();
+
+    if (argFile) openFile(argFile);
+
+    if (remote.getGlobal('isMainWindow')(remote.getCurrentWindow())) checkForUpdates(true);
+
+</script>
+</html>
