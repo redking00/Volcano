@@ -1,6 +1,8 @@
 # Volcano
 A GUI for Krakatau assembler / disassembler built with Electron and CodeMirror.
 
+Download from https://github.com/redking00/Volcano/releases
+
 Krakatau (https://github.com/Storyyeller/Krakatau) is included as a pyInstaller executable. Only win32-x64 support for now.
  
 You can edit and assemble *.j source files and disassemble class or jar files.
