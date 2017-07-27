@@ -31,7 +31,7 @@
 </body>
 
 <script>
-    let rolling = 1148;
+    let rolling = 1149;
     let debug = false;
     let currentFilePath;
     let currentOutputPath;
@@ -168,7 +168,11 @@
         },
         {
             label:'View', submenu:[
-                { label: 'Full Screen mode', accelerator:'F11', role:'togglefullscreen' }
+                { label: 'Full Screen mode', accelerator:'F11', click(){
+                    remote.getCurrentWindow().setFullScreen(!remote.getCurrentWindow().isFullScreen());
+                    remote.getCurrentWindow().setMenuBarVisibility(true);
+                }
+                }
             ]
         },
         {
@@ -656,12 +660,19 @@
                             '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[1].replace(/ /g,'&nbsp;') +
                             '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[2].replace(/ /g,'&nbsp;');
                         showAlert('Assembler error (line ' + line + ', col ' + col + '):<br>' + htmlmsg);
+                        setStatusBarMessage('Build failed.');
                         if (debug) console.log(match);
                     }
-                    else showAlert('Assembler error: ' + stderror);
+                    else {
+                        showAlert('Assembler error: ' + stderror);
+                        setStatusBarMessage('Build failed.');
+                    }
                 }
             }
-            else showAlert('Assembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
+            else {
+                showAlert('Assembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
+                setStatusBarMessage('Build failed.');
+            }
 
             if (debug) console.log(`child process exited with code ${code}`);
         });
@@ -813,7 +824,10 @@
                             }
                             else showAlert(patchFile);
                         }
-                        else if (!quiet) showAlert('Volcano is up to date!');
+                        else if (!quiet) {
+                            showAlert('Volcano is up to date!');
+                            setStatusBarMessage('Volcano is up to date!');
+                        }
                     }
                     else if (!quiet) printGenericError();
                 }
