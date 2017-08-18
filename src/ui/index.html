@@ -413,6 +413,7 @@
     }
 
     function openFile(fileName) {
+        console.log('fileName', fileName)
         if (fileName.toLowerCase().endsWith(".class") || fileName.toLowerCase().endsWith(".jar")) {
             function doDisAsm(roundtrip) {
                 dialog.showOpenDialog(
@@ -880,7 +881,7 @@
 
     if (argFile) openFile(argFile);
 
-    if (remote.getGlobal('isMainWindow')(remote.getCurrentWindow())) checkForUpdates(true);
+    // if (remote.getGlobal('isMainWindow')(remote.getCurrentWindow())) checkForUpdates(true);
 
 </script>
 </html>
