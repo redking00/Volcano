@@ -5,8 +5,7 @@
   "description": "A GUI for Krakatau assembler/disassembler",
   "main": "src/main.js",
   "author": "Diego Vigorra, Robert Grosse",
-  "license": "GPLv3",
-
+  "license": "GPL-3.0+",
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
@@ -47,7 +46,13 @@
     }
   },
   "dependencies": {
-    "electron-compile": "^6.4.1"
+    "big-integer": "^1.6.24",
+    "electron-compile": "^6.4.1",
+    "escape-html": "^1.0.3",
+    "math-float32-from-word": "^1.0.0",
+    "math-float32-to-word": "^1.0.0",
+    "math-float64-from-words": "^1.0.0",
+    "math-float64-to-words": "^1.0.0"
   },
   "devDependencies": {
     "babel-plugin-transform-async-to-generator": "^6.24.1",
