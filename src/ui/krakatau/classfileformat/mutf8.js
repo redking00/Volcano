@@ -34,7 +34,7 @@ function encode(s) {
         }
     }
 
-    return Buffer(bytes)
+    return Buffer.from(bytes)
 }
 
 function decode(b) {

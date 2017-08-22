@@ -2,84 +2,217 @@
 
 let debug = false;
 
-const { app, BrowserWindow } = require('electron');
+const electron = require('electron');
 
-// Ignore arguments that don't end in .j, .class, or .jar (case insensitive)
-const argFiles = process.argv.slice(1).filter(f => /\.(j|class|jar)$/i.test(f));
+const fs = require('fs');
 
-// Keep a global reference of the window object, if you don't, the window will
-// be closed automatically when the JavaScript object is garbage collected.
-let windows = new Set();
+const path = require('path');
 
-const createWindow = (fileName) => {
-  // Create the browser window.
-  const new_window = new BrowserWindow({
-    width: 800,
-    height: 600,
-    minWidth: 640,
-    minHeight: 400,
-    center: true,
-    resizable: true,
-    fullscreen: false,
-    fullscreenable: true,
-    backgroundColor: '#000',
-    show: false
-  });
+const crypto = require('crypto');
 
-  // and load the index.html of the app.
-  new_window.loadURL(`file://${__dirname}/ui/index.html`);
+const jszip = require('./jszip/jszip.min.js');
 
-  // Open the DevTools.
-  if (debug) new_window.webContents.openDevTools();
-  new_window.setMenu(null);
+const mkdirP = require('./mkdirP/index.js');
 
-  // Emitted when the window is closed.
-  new_window.on('closed', () => {
-    // Dereference the window object, usually you would store windows
-    // in an array if your app supports multi windows, this is the time
-    // when you should delete the corresponding element.
-    windows.delete(new_window);
-  });
+const app = electron.app;
 
-  new_window.on('ready-to-show',()=>{
-      new_window.show();
-  });
+let argFiles = [];
 
-  new_window.argFile = fileName;
-  windows.add(new_window);
-  return new_window;
-};
+let windows = [];
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.on('ready', () => {
-  argFiles.forEach(file => createWindow(file));
+if (process.argv.length > 1){
+    for (let n = 1 ; n < process.argv.length; ++n) {
+        if (process.argv[n].toLowerCase().endsWith('.j')) argFiles.push(process.argv[n]);
+        else if (process.argv[n].toLowerCase().endsWith('.class')) argFiles.push(process.argv[n]);
+//        else if (process.argv[n].toLowerCase().endsWith('.jar')) argFiles.push(process.argv[n]);
+    }
+}
 
-  if (!argFiles.length) {
-    createWindow();
-  }
+let shouldQuit = app.makeSingleInstance(function(commandLine, workingDirectory) {
+    let newArgFiles = [];
+    if (commandLine.length > 1){
+        for (let n = 1 ; n < commandLine.length; ++n) {
+            if (commandLine[n].toLowerCase().endsWith('.j')) newArgFiles.push(commandLine[n]);
+            else if (commandLine[n].toLowerCase().endsWith('.class')) newArgFiles.push(commandLine[n]);
+//            else if (commandLine[n].toLowerCase().endsWith('.jar')) newArgFiles.push(commandLine[n]);
+        }
+    }
+    if (newArgFiles.length>0){
+        newArgFiles.forEach((file)=>{
+           windows.push(createMainWindow(file));
+        });
+    }
+    else windows.push(createMainWindow());
+    newArgFiles.forEach((file)=>{argFiles.push(file)});
 });
 
-// Quit when all windows are closed.
-app.on('window-all-closed', () => {
-  // On OS X it is common for applications and their menu bar
-  // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform !== 'darwin') {
+if (shouldQuit) {
     app.quit();
-  }
-});
+    return;
+}
 
-app.on('activate', () => {
-  // On OS X it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
-  if (windows.size === 0) {
-    createWindow();
-  }
-});
+function onClosed() {
+    let index = windows.indexOf(this);
+    if (index >= 0) windows.splice(index,1);
+}
+
+function createMainWindow(argFile) {
+    const win = new electron.BrowserWindow({
+        width: 800,
+        height: 600,
+        minWidth: 640,
+        minHeight: 400,
+        center: true,
+        resizable: true,
+        fullscreen: false,
+        fullscreenable: true,
+        backgroundColor: '#000',
+        show: false
+    });
+
+    if (debug) win.webContents.openDevTools({detach:true});
+    win.setMenu(null);
+
+    win.argFile = argFile;
+
+    win.loadURL('file://' + path.resolve(__dirname,'..','volcano.asar','index.html'));
+
+    win.on('closed', onClosed);
+
+    win.on('ready-to-show',()=>{
+        win.show();
+    });
+
+    return win;
+}
+
+function doReady() {
+    if (windows.length === 0) {
+        if (argFiles.length>0){
+            argFiles.forEach((file)=>{
+                windows.push(createMainWindow(file));
+            });
+        }
+        else windows.push(createMainWindow());
+    }
+}
+
+function updatePackages(callback) {
+    try{
+        let installFolder = path.dirname(process.argv[0]);
+        let resourceFolder = path.resolve(installFolder,'resources');
+        let patchFiles = [];
+
+        fs.readdirSync(resourceFolder).forEach(file => {
+            let match = /^volcano_patch_([0-9]+)_([0-9a-f]+)$/.exec(file);
+            if (match) patchFiles.push({path:path.resolve(resourceFolder,file), rolling:match[1], hash:match[2]});
+        });
+
+        if (patchFiles.length > 0) {
+            patchFiles.sort((a, b) => { return a.rolling < b.rolling ? -1 : 1; });
+
+            const checkHashTasks = patchFiles.map((file) => new Promise((resolve, reject) => {
+                try {
+                    let hash = crypto.createHash('md5');
+                    let stream = fs.createReadStream(file.path);
+                    stream.on('data', function (data) {
+                        hash.update(data, 'utf8')
+                    });
+                    stream.on('end', function () {
+                        file.cHash = hash.digest('hex');
+                        file.isOk = (file.cHash === file.hash);
+                        resolve();
+                    });
+                }
+                catch (Err) {reject();}
+            }));
+
+            Promise.all(checkHashTasks).then(() => {
+                function extractPatch(npatch) {
+                    let file;
+                    if (npatch < patchFiles.length) file = patchFiles[npatch];
+                    else {
+                        callback();
+                        return;
+                    }
+
+                    if (debug) console.log('Applying patch [' + file.rolling + ']');
+                    fs.readFile(file.path, function (err, data) {
+                        if (err) {
+                            if (debug) console.log(err);
+                            extractPatch(npatch + 1);
+                            return;
+                        }
+                        jszip.loadAsync(data).then((zip) => {
+                            const extractTasks = [];
+                            Object.keys(zip.files).forEach((filename) => {
+                                if (!zip.files[filename].dir) {
+                                    extractTasks.push(new Promise((resolve, reject) => {
+                                        zip.files[filename].async('nodebuffer').then((content) => {
+                                            if (debug) console.log('FILENAME:' + filename);
+                                            let dest = path.resolve(resourceFolder, filename);
+                                            let folder = path.dirname(dest);
+                                            if (fs.existsSync(folder)) {
+                                                if (fs.existsSync(dest)) {
+                                                    fs.truncateSync(dest, 0);
+                                                }
+                                            }
+                                            else try {
+                                                mkdirP.sync(folder);
+                                            } catch (err) {
+                                                if (debug) console.log(err);
+                                            }
+                                            fs.writeFileSync(dest, content);
+                                            resolve();
+                                        }).catch((err) => {
+                                            if (debug) console.log(err);
+                                            reject();
+                                        });
+                                    }));
+                                }
+                            });
+                            Promise.all(extractTasks).then(() => {
+                                if (debug) console.log('All extracted');
+                                fs.unlink(file.path, (err) => {});
+                                extractPatch( npatch + 1);
+                            });
+                        }).catch((err) => {
+                            if (debug) console.log(err);
+                            fs.unlink(file.path, (err) => {});
+                            extractPatch( npatch + 1);
+                        });
+                    });
+                }
+
+                try {
+                    let n = 0;
+                    while (n < patchFiles.length) {
+                        if (!patchFiles[n].isOk) {
+                            fs.unlink(patchFiles[n].path, (err) => {});
+                            patchFiles.splice(n,1);
+                        }
+                        else ++n;
+                    }
+                    if (patchFiles.length > 0) extractPatch(0);
+                }
+                catch (err) {
+                    if (debug) console.log(err);
+                    callback();
+                }
+            });
+        }
+        else callback();
+    }
+    catch(err) {
+        if (debug) console.log(err);
+        callback();
+    }
+}
 
 global.openFile = function(file) {
-  createWindow(file).focus();
+    let window = createMainWindow(file);
+    windows.push(window);
+    window.focus();
 };
 
 global.restart = function() {
@@ -87,7 +220,20 @@ global.restart = function() {
     app.quit();
 };
 
-// global.isMainWindow = function(win) {
-//     return (windows.indexOf(win)===0);
-// };
+global.isMainWindow = function(win) {
+    return (windows.indexOf(win)===0);
+};
+
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+        app.quit();
+    }
+});
+
+app.on('ready', () => {
+    updatePackages(()=>{
+        doReady();
+    });
+});
+
 

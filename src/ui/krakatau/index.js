@@ -24,9 +24,13 @@ const parse = require('./assembler/parse')
 
 function disassemble(data, roundtrip) {
     const clsdata = new ClassData(new Reader(data))
-    let result = ''
+    let clsname;
+    try { clsname = clsdata.pool.slots[clsdata.pool.slots[clsdata.this].refs[0]].data; }
+    catch(e){ clsname = null; }
+
+    let result = '';
     new Disassembler(clsdata, s => {result += s}, roundtrip).disassemble()
-    return result
+    return { name: clsname, data: result };
 }
 
 function assemble(source) {

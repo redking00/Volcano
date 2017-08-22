@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="FindReplacePanel/FindReplacePanel.css">
 
     <script src="util/extend.js"></script>
+    <script src="BigInteger/BigInteger.min.js"></script>
     <script src="FindReplacePanel/FindReplacePanel.js"></script>
     <script src="codemirror/lib/codemirror.js"></script>
     <script src="codemirror/addon/search/searchcursor.js"></script>
@@ -31,7 +32,7 @@
 </body>
 
 <script>
-    let rolling = 1149;
+    let rolling = 1200;
     let debug = false;
     let currentFilePath;
     let currentOutputPath;
@@ -48,18 +49,15 @@
 
     const {Menu, dialog, process} = remote;
 
-    const system = process.platform + '-' + process.arch;
-
     const fs = remote.require('fs');
 
     const path = remote.require('path');
 
     const https = remote.require('https');
 
-    const escapeHTML = remote.require('escape-html');
+    const escapeHTML = require('./escape-html');
 
-    const krakatau = require('../krakatau/main.js');
-
+    const krakatau = require('./krakatau');
 
     const menu = Menu.buildFromTemplate([
         {
@@ -95,12 +93,12 @@
             submenu:[
                 { label: 'Undo',        accelerator: 'CmdOrCtrl+Z', role:'undo' },
                 { label: 'Redo',        accelerator: 'CmdOrCtrl+Y', role:'redo' },
-                {type: 'separator'},
+                { type: 'separator' },
                 { label: 'Cut',         accelerator: 'CmdOrCtrl+X', role:'cut' },
                 { label: 'Copy',        accelerator: 'CmdOrCtrl+C', role:'copy' },
                 { label: 'Paste',       accelerator: 'CmdOrCtrl+V', role:'paste' },
                 { label: 'Delete',      accelerator: 'CmdOrCtrl+D', role:'delete' },
-                {type: 'separator'},
+                { type: 'separator' },
                 { label: 'Find',        accelerator: 'CmdOrCtrl+F' ,
                     click() { findReplacePanel.open(false,editor.getSelection()); }
                 },
@@ -167,6 +165,45 @@
                         else showSaveFileDialog(()=>{ if (currentFilePath) doAsmTo(); });
                     }
                 },
+/*
+                {
+                    label: 'Assemble entire folder', accelerator: 'F7', click(){
+                        function doAsmFolderFromTo() {
+                            dialog.showOpenDialog(
+                                remote.getCurrentWindow(),
+                                {
+                                    title: 'Select folder to assemble',
+                                    properties: ['openDirectory']
+                                },
+                                function (inputFolderNames) {
+                                    if (inputFolderNames) {
+                                        dialog.showOpenDialog(
+                                            remote.getCurrentWindow(),
+                                            {
+                                                title: 'Select assembler output folder',
+                                                properties: ['openDirectory','createDirectory']
+                                            },
+                                            function (outputFolderNames) {
+                                                if (outputFolderNames) {
+                                                    assembleFolder(inputFolderNames[0], outputFolderNames[0]);
+                                                }
+                                            }
+                                        );
+                                    }
+                                }
+                            );
+                        }
+                        if (dirty) {
+                            if (currentFilePath) {
+                                saveFile(currentFilePath);
+                                doAsmFolderFromTo();
+                            }
+                            else showSaveFileDialog(()=>{ if (currentFilePath) doAsmFolderFromTo(); });
+                        }
+                        else doAsmFolderFromTo();
+                    }
+                },
+*/
             ]
         },
         {
@@ -244,7 +281,7 @@
 
     const findReplacePanel = new FindReplacePanel(editor);
 
-    const updateURL = 'https://github.com/redking00/Volcano/raw/master/updates/' + system + '/';
+    const updateURL = 'https://github.com/redking00/Volcano/raw/master/updates/';
 
     function formatVersion(rolling) {
         let rollingStr = ''+rolling;
@@ -288,8 +325,11 @@
         showYesNoCancelDialog('Do you want to save the changes in current file?',yes,no,cancel);
     }
 
-    function showAlert(msg) {
-        vex.dialog.alert({unsafeMessage:msg});
+    function showAlert(msg,width) {
+        let dlg = vex.dialog.alert({unsafeMessage:msg});
+        if (width) {
+            dlg.rootEl.querySelector('.vex-content').style.width = width;
+        }
     }
 
     function showYesNoCancelDialog(msg,yes,no,cancel) {
@@ -351,10 +391,11 @@
                 remote.getCurrentWindow(),
                 {
                     filters: [
-                        { extensions: ['j','class','jar'],  name:'All supported formats'},
+//                        { extensions: ['j','class','jar'],  name:'All supported formats'},
+                        { extensions: ['j','class'],  name:'All supported formats'},
                         { extensions: ['j'],        name:'Krakatau source'},
                         { extensions: ['class'],    name:'Java class'},
-                        { extensions: ['jar'],      name:'Java jar'}
+//                        { extensions: ['jar'],      name:'Java jar'}
                     ],
                     properties:['multiSelections']
                 },
@@ -416,8 +457,9 @@
     }
 
     function openFile(fileName) {
-        console.log('fileName', fileName)
-        if (fileName.toLowerCase().endsWith(".class") || fileName.toLowerCase().endsWith(".jar")) {
+        if (fileName.toLowerCase().endsWith(".class")
+//            || fileName.toLowerCase().endsWith(".jar")
+        ) {
             function doDisAsm(roundtrip) {
                 dialog.showOpenDialog(
                     remote.getCurrentWindow(),
@@ -533,15 +575,14 @@
 
     function disassemble(inputFile, outputDir, roundtrip) {
         setStatusBarMessage('Disassembling...');
-
         try {
             const data = fs.readFileSync(inputFile);
             const result = krakatau.disassemble(data, roundtrip);
-
-            const outPath = path.join(outputDir, 'out.j');
-            fs.writeFileSync(outPath, result);
-
-            setStatusBarMessage('Disassembled successfully.');
+            // TODO - handle weird filenames
+            const clsName = result.name || ('no_class_name_' + new Date().getTime());
+            const outPath = path.resolve(outputDir, ...clsName.split('/')) + '.j';
+            fs.writeFileSync(outPath, result.data);
+            setStatusBarMessage( outPath + ' > Disassembled successfully.');
             loadFile(outPath);
         } catch (e) {
             showAlert('Disassemble error: ' + e.toString());
@@ -550,43 +591,151 @@
     }
 
     function assemble(inputFile, outputDir) {
-        const source = fs.readFileSync(inputFile, {encoding: 'utf8'});
-
         setStatusBarMessage('Building...');
-        const assembled = krakatau.assemble(source);
-        let hadError = false;
-        for (const [success, result] of assembled) {
-            if (success) {
-                let {name, data} = result;
-                // TODO - handle weird filenames
-                name = name.toString('utf8');
-                const outPath = path.join(outputDir, ...name.split('/'));
-                fs.writeFileSync(outPath, data);
-                setStatusBarMessage(name + ' > assembled.');
-            } else {
-                hadError = true;
-                const {error, notes} = result.args;
-                const eh = escapeHTML;
-
-                const {line, col, message, snippet, markers} = result.format(error);
-                let html = `${line}:${col} error: ${eh(message)}<pre>\n${eh(snippet)}\n${eh(markers)}\n</pre>`;
-
-                notes.slice(0, 5).forEach(note => {
-                    const {line, col, message, snippet, markers} = result.format(note);
-                    html += `${line}:${col} note: ${eh(message)}<pre>\n${eh(snippet)}\n${eh(markers)}\n</pre>`;
-                });
-
-                editor.scrollIntoView({line:line, ch:col});
-                editor.getMode().addAssemblerError(line-1, html);
-                showAlert(html);
-                setStatusBarMessage('Assembler error');
+        try {
+            const source = fs.readFileSync(inputFile, {encoding: 'utf8'});
+            const assembled = krakatau.assemble(source.replace(/\r\n/g,'\n'));
+            let hadError = false;
+            for (const [success, result] of assembled) {
+                if (success) {
+                    let {name, data} = result;
+                    // TODO - handle weird filenames
+                    name = name.toString('utf8');
+                    const outPath = path.resolve(outputDir, ...name.split('/')) + '.class';
+                    fs.writeFileSync(outPath, data);
+                    setStatusBarMessage(outPath + ' > assembled.');
+                }
+                else {
+                    hadError = true;
+                    const {error, notes} = result.args;
+                    const eh = escapeHTML;
+                    const {line, col, message, snippet, markers} = result.format(error);
+                    let ghtml = `${eh(message)}<pre>\n${eh(snippet)}\n${eh(markers)}\n</pre>`;
+                    let html = `${line}:${col} error: ${ghtml}`;
+                    editor.scrollIntoView({line:line, ch:col});
+                    editor.getMode().addAssemblerError(line-1, ghtml);
+                    showAlert(html);
+                    setStatusBarMessage('Build failed');
+                }
+            }
+            if (!hadError) {
+                showAlert(`${assembled.length} files assembled successfully.`);
             }
         }
-
-        if (!hadError) {
-            showAlert(`${assembled.length} files assembled successfully.`);
+        catch (e) {
+            showAlert('Build failed: ' + e.toString());
+            setStatusBarMessage('Build failed: ' + e.toString());
+            if (debug) console.log(e);
         }
     }
+
+/*
+    function assembleFolder(inputDir, outputDir) {
+        let stdoutput = '';
+        let stderror = '';
+        let lines = [];
+        let processed = [];
+
+        setStatusBarMessage('Building folder...');
+
+        const { spawn } = remote.require('child_process');
+        let params = [inputDir,'-r', '-out', outputDir];
+        const proc = spawn(kasmPath, params);
+
+        proc.stdout.on('data', (data) => {
+            stdoutput += data;
+            let templines = stdoutput.split('\n');
+            if (templines.length > 1) {
+                for (let n = 0; n < templines.length - 1; ++n) {
+                    lines.push(templines[n]);
+                    if (templines[n].startsWith('Processing file ')){
+                        let match = /(Processing file )([^,]+)(, )(\d+)(\/)(\d+)( remaining)/.exec(templines[n]);
+                        if (match) {
+                            let msg = 'Processing file ' + (match[6]-match[4]+1) + ' of ' + match[6] + ' > ' + match[2];
+                            processed.push(match[2]);
+                            setStatusBarMessage(msg);
+                            if (debug) console.log(msg);
+                        }
+                    }
+                }
+                stdoutput = templines[templines.length-1];
+            }
+            if (debug) console.log(`stdout: ${data}`);
+        });
+
+        proc.stderr.on('data', (data) => {
+            stderror += data;
+            if (debug) console.log(`stderr: ${data}`);
+        });
+
+        proc.on('close', (code) => {
+            let templines = stdoutput.split('\n');
+            if (templines.length > 0) {
+                for (let n = 0; n < templines.length; ++n) {
+                    lines.push(templines[n]);
+                    if (templines[n].startsWith('Processing file ')){
+                        let match = /(Processing file )([^,]+)(, )(\d+)(\/)(\d+)( remaining)/.exec(templines[n]);
+                        if (match) {
+                            let msg = 'Processing file ' + (match[6]-match[4]+1) + ' of ' + match[6] + ' > ' + match[2];
+                            processed.push(match[2]);
+                            setStatusBarMessage(msg);
+                            if (debug) console.log(msg);
+                        }
+                    }
+                }
+            }
+
+            if (debug) console.log(processed);
+
+            if (code == 0) {
+                showAlert('Done.','300px');
+                setStatusBarMessage(inputDir + ' > assembled.');
+            }
+            else if (code == 1) {
+                if (stderror.length > 0){
+                    let lines = stderror.split('\n');
+                    if (debug) console.log(lines[0]);
+                    let match = /([^:]+):(\d+):(\d+):( error: )(.*)/.exec(lines[0].replace(/(\r\n|\n|\r)/gm,''));
+                    if (match) {
+                        if (debug) console.log(match);
+                        let file = match[1];
+                        let line = match[2];
+                        let col = match[3];
+                        let errordesc =
+                            match[5].trimRight() + '\n' +
+                            lines[1].replace(/(\r\n|\n|\r)/gm,'').trimRight() + '\n' +
+                            lines[2].replace(/(\r\n|\n|\r)/gm,'').trimRight();
+                        let asmlines = errordesc.split('\n');
+                        let htmlmsg =
+                            asmlines[0] +
+                            '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[1].replace(/ /g,'&nbsp;') +
+                            '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[2].replace(/ /g,'&nbsp;');
+
+
+                        if (processed[processed.length-1] === currentFilePath) {
+                            editor.scrollIntoView({line:line,ch:col});
+                            editor.getMode().addAssemblerError(line-1,errordesc);
+                            showAlert('Assembler error (line ' + line + ', col ' + col + '):<br>' + htmlmsg);
+                            setStatusBarMessage('Build failed.');
+                        }
+                        else {
+                            showAlert('Assembler error on file<br>' + processed[processed.length-1] + '<br>(line ' + line + ', col ' + col + '):<br>' + htmlmsg,'80%');
+                            setStatusBarMessage('Build failed.');
+                        }
+                    }
+                    else {
+                        showAlert('Assembler error: ' + stderror);
+                        setStatusBarMessage('Build failed.');
+                    }
+                }
+            }
+            else showAlert('Assembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
+
+            if (debug) console.log(`child process exited with code ${code}`);
+
+        });
+    }
+*/
 
     function clearErrorGutterOnEmptyLines() {
         clearTimeout(changeTimer);
@@ -711,7 +860,7 @@
                             if (patchFile.startsWith('#PATCH#')) {
                                 patchFile = patchFile.replace('#PATCH#','');
                                 showYesNoDialog(
-                                    'Updates available, do you want to download them now?', () => {
+                                    'Update available, do you want to download them now?', () => {
                                         let installFolder = path.dirname(process.argv[0]);
                                         let resourcesFolder = path.resolve(installFolder, 'resources');
                                         let patchPath = path.resolve(resourcesFolder, patchFile);
@@ -790,7 +939,7 @@
 
     if (argFile) openFile(argFile);
 
-    // if (remote.getGlobal('isMainWindow')(remote.getCurrentWindow())) checkForUpdates(true);
+    if (remote.getGlobal('isMainWindow')(remote.getCurrentWindow())) checkForUpdates(true);
 
 </script>
 </html>

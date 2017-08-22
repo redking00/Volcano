@@ -1,6 +1,8 @@
 // CodeMirror, copyright (c) by Marijn Haverbeke and others
 // Distributed under an MIT license: http://codemirror.net/LICENSE
 
+// Krakatau mode by Diego Vigorra Treviño
+
 (function(mod) {
     if (typeof exports === "object" && typeof module === "object") // CommonJS
         mod(require("../lib/codemirror"));
@@ -22,9 +24,8 @@
             'WORD'                :/([a-zA-Z_$(<[][a-zA-Z_$(<[0-9)>/;*+-]*)/,
             'STR_LITERAL'         :/([bB]?(?:"[^"\n\\]*(?:\\(?:U00(?:10|0[0-9a-fA-F])[0-9a-fA-F]{{4}}|u[0-9a-fA-F]{{4}}|x[0-9a-fA-F]{{2}}|[btnfr'"\\0-7])[^"\n\\]*)*"|'[^'\n\\]*(?:\\(?:U00(?:10|0[0-9a-fA-F])[0-9a-fA-F]{{4}}|u[0-9a-fA-F]{{4}}|x[0-9a-fA-F]{{2}}|[btnfr'"\\0-7])[^'\n\\]*)*'))/,
             'INT_LITERAL'         :/([+-]?(0[xX][0-9a-fA-F]+|[1-9][0-9]*|0))\b/,
-            'NAT_LITERAL'         :/((0[xX][0-9a-fA-F]+|[1-9][0-9]*|0)[lL]?)\b/,
-            'LONG_LITERAL'        :/([+-]?(0[xX][0-9a-fA-F]+|[1-9][0-9]*|0)[lL]?)\b/,
-            'FLOAT_LITERAL'       :/((([-+][Ii][Nn][Ff][Ii][Nn][Ii][Tt][Yy]|[-+][Nn][Aa][Nn](<0[xX][0-9a-fA-F]+>)?)|[-+]?(\d+\.\d+([eE][+-]?\d+)?|\d+[eE][+-]?\d+|0[xX][0-9a-fA-F]+(\.[0-9a-fA-F]+)?[pP][+-]?\d+))[fF]?)\b/,
+            'LONG_LITERAL'        :/([+-]?(0[xX][0-9a-fA-F]+|[1-9][0-9]*|0)[lL])\b/,
+            'FLOAT_LITERAL'       :/((([-+][Ii][Nn][Ff][Ii][Nn][Ii][Tt][Yy]|[-+][Nn][Aa][Nn](<0[xX][0-9a-fA-F]+>)?)|[-+]?(\d+\.\d+([eE][+-]?\d+)?|\d+[eE][+-]?\d+|0[xX][0-9a-fA-F]+(\.[0-9a-fA-F]+)?[pP][+-]?\d+))[fF])\b/,
             'DOUBLE_LITERAL'      :/(([-+][Ii][Nn][Ff][Ii][Nn][Ii][Tt][Yy]|[-+][Nn][Aa][Nn](<0[xX][0-9a-fA-F]+>)?)|[-+]?(\d+\.\d+([eE][+-]?\d+)?|\d+[eE][+-]?\d+|0[xX][0-9a-fA-F]+(\.[0-9a-fA-F]+)?[pP][+-]?\d+))\b/,
             'ident'               :/([a-zA-Z_$(<[][a-zA-Z_$(<[0-9)>/;*+-]*)|("[^"]*"|'[^']*')/,
             'clsref'              :/(\[([0-9]+|[a-z][a-z0-9_]*)])|([a-zA-Z_$(<[][a-zA-Z_$(<[0-9)>/;*+-]*)|("[^"]*"|'[^']*')/,
@@ -115,10 +116,121 @@
             'op_cls_int'          :/multianewarray/,
             'op_fmim'             :/getstatic|putstatic|getfield|putfield|invokevirtual|invokespecial|invokestatic/,
             'op_invint'           :/invokeinterface/,
+            'op_invdyn'           :/invokedynamic/,
 
             'tableswitch'         :/tableswitch/,
             'lookupswitch'        :/lookupswitch/,
             'wide'                :/wide/,
+
+        };
+
+        let checks = {
+
+            u8:{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= 0 && v < 256);
+                },
+                msg: 'Value must be in range 0 <= x < 256'
+            },
+
+            s8:{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= -128 && v < 128);
+                },
+                msg: 'Value must be in range -128 <= x < 128'
+            },
+
+            s8_w:{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= -128 && v < 128);
+                },
+                msg: 'Overflow warning, byte value must be in range -128 <= x < 128'
+            },
+
+            u16:{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= 0 && v < 65536);
+                },
+                msg: 'Value must be in range 0 <= x < 65536'
+            },
+
+            u16_w:{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= 0 && v < 65536);
+                },
+                msg: 'Overflow warning, value must be in range 0 <= x < 65536'
+            },
+
+            s16:{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= -32768 && v < 32768);
+                },
+                msg: 'Value must be in range -32768 <= x < 32768'
+            },
+
+            s16_w:{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= -32768 && v < 32768);
+                },
+                msg: 'Overflow warning, short value must be in range -32768 <= x < 32768'
+            },
+
+            u32:{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= 0 && v < 4294967296);
+                },
+                msg: 'Value must be in range 0 <= x < 2^32'
+            },
+
+            s32:{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= -2147483648 && v < 2147483648);
+                },
+                msg: 'Value must be in range -2^31 <= x < 2^31'
+            },
+
+            s64:{
+                isValid: function(n) {
+                    try {
+                        let base;
+                        if (n.startsWith('0x')) base = 16;
+                        else  base = 10;
+                        let bi = bigInt(n.replace(/^0x/,'').replace(/L$/, ''), base);
+                        return (bi.greaterOrEquals('-9223372036854775808') && bi.lesser('9223372036854775808'));
+                    }
+                    catch(Err) {
+                        return false;
+                    }
+                },
+                msg: 'Value must be in range -2^63 <= x < 2^63'
+            },
+
+            '1_4':{
+                isValid: function(n) {
+                    let v = parseInt(n);
+                    if (isNaN(v)) return false;
+                    return (v >= 1 && v < 4);
+                },
+                msg: 'Value must be in range 1 <= x < 4'
+            },
 
         };
 
@@ -133,8 +245,8 @@
             {
                 id:'VERSION', tokens:[
         /* 0  */    { exp:lex._version      ,type:'directive' },
-        /* 1  */    { exp:lex.NAT_LITERAL   ,type:'number' },
-        /* 2  */    { exp:lex.NAT_LITERAL   ,type:'number' },
+        /* 1  */    { exp:lex.INT_LITERAL   ,type:'number'      ,check:checks.u16 },
+        /* 2  */    { exp:lex.INT_LITERAL   ,type:'number'      ,check:checks.u16 },
                 ]
             },
 
@@ -165,44 +277,59 @@
         /* 0  */    { exp:lex._field        ,type:'directive' },
         /* 1  */    { exp:lex.flag          ,type:'flag'        ,opt:true       ,goto:0 },
         /* 2  */    { exp:lex.utfref        ,type:'fieldname' },
-        /* 3  */    { exp:lex.utfref        ,type:'fieldtype' },
-        /* 4  */    { exp:lex.eq            ,type:'operator'    ,opt:true       ,spaced:true },
-        /* 5  */    { exp:lex.CPREF         ,type:'atom'        ,opt:true       ,if:-1          ,goto:17 },
-        /* 6  */    { exp:lex.FLOAT_LITERAL ,type:'number'      ,opt:true       ,if:-2          ,goto:16 },
-        /* 7  */    { exp:lex.LONG_LITERAL  ,type:'number'      ,opt:true       ,if:-3          ,goto:15 },
-        /* 8  */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,if:-4          ,goto:14 },
-        /* 9  */    { exp:lex.STR_LITERAL   ,type:'string'      ,opt:true       ,if:-5          ,goto:13 },
-        /* 10 */    { exp:lex.class         ,type:'keyword'     ,opt:true       ,if:-6 },
-        /* 11 */    { exp:lex.utfref        ,type:'classname2'  ,if:-1          ,goto:11        ,spaced:true },
-        /* 12 */    { exp:lex.methodtype    ,type:'keyword'     ,opt:true       ,if:-8 },
-        /* 13 */    { exp:lex.utfref        ,type:'fieldname'   ,if:-1          ,goto:9         ,spaced:true },
-        /* 14 */    { exp:lex.methodhandle  ,type:'keyword'     ,if:-10 },
-        /* 15 */    { exp:lex.handlecode    ,type:'keyword'     ,if:-1          ,spaced:true },
-        /* 16 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,goto:6     ,spaced:true },
-        /* 17 */    { exp:lex.fmim_tag      ,type:'keyword'     ,if:-3          ,spaced:true },
-        /* 18 */    { exp:lex.clsref        ,type:'classname2'  ,if:-4          ,spaced:true },
-        /* 19 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-5          ,goto:3     ,spaced:true },
-        /* 20 */    { exp:lex.ident         ,type:'fieldname'   ,if:-6          ,spaced:true },
-        /* 21 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-7          ,spaced:true },
-        /* 22 */    { exp:lex._fieldattr    ,type:'directive'   ,opt:true       ,spaced:true    ,pushctx:'fieldattributes'}
+
+        /* 3  */    { exp:/F\b/             ,type:'fieldtype'   ,opt:true       ,goto:9 },
+        /* 4  */    { exp:/D\b/             ,type:'fieldtype'   ,opt:true       ,goto:8 },
+        /* 5  */    { exp:/B\b/             ,type:'fieldtype'   ,opt:true       ,goto:7 },
+        /* 6  */    { exp:/S\b/             ,type:'fieldtype'   ,opt:true       ,goto:6 },
+        /* 7  */    { exp:/Z\b/             ,type:'fieldtype'   ,opt:true       ,goto:5 },
+        /* 3  */    { exp:/C\b/             ,type:'fieldtype'   ,opt:true       ,goto:4 },
+        /* 8  */    { exp:/I\b/             ,type:'fieldtype'   ,opt:true       ,goto:3 },
+        /* 9  */    { exp:/J\b/             ,type:'fieldtype'   ,opt:true       ,goto:2 },
+        /* 10 */    { exp:lex.utfref        ,type:'fieldtype' },
+        /* 11 */    { exp:lex.eq            ,type:'operator'    ,opt:true       ,spaced:true    ,goto:2 },
+        /* 12 */    { goto:23 },
+        /* 13 */    { exp:lex.FLOAT_LITERAL ,type:'number'      ,opt:true       ,if:-11         ,spaced:true        ,goto:22 },
+        /* 14 */    { exp:lex.DOUBLE_LITERAL,type:'number'      ,opt:true       ,if:-11         ,spaced:true        ,goto:21 },
+        /* 15 */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,if:-11         ,spaced:true        ,check:checks.s8_w  ,goto:20 },
+        /* 16 */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,if:-11         ,spaced:true        ,check:checks.s16_w ,goto:19 },
+        /* 17 */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,if:-11         ,spaced:true        ,check:checks.s32   ,goto:18 },
+        /* 17 */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,if:-11         ,spaced:true        ,check:checks.u16_w ,goto:17 },
+        /* 18 */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,if:-11         ,spaced:true        ,check:checks.s32   ,goto:16 },
+        /* 19 */    { exp:lex.LONG_LITERAL  ,type:'number'      ,opt:true       ,if:-11         ,spaced:true        ,check:checks.s64   ,goto:15 },
+        /* 20 */    { exp:lex.STR_LITERAL   ,type:'string'      ,opt:true       ,if:-11         ,spaced:true        ,goto:14 },
+        /* 21 */    { exp:lex.CPREF         ,type:'atom'        ,opt:true       ,spaced:true    ,goto:13 },
+        /* 22 */    { exp:lex.class         ,type:'keyword'     ,opt:true       ,spaced:true },
+        /* 23 */    { exp:lex.utfref        ,type:'classname2'  ,if:-1          ,goto:11        ,spaced:true },
+        /* 24 */    { exp:lex.methodtype    ,type:'keyword'     ,opt:true       ,spaced:true },
+        /* 25 */    { exp:lex.utfref        ,type:'fieldname'   ,if:-1          ,goto:9         ,spaced:true },
+        /* 26 */    { exp:lex.methodhandle  ,type:'keyword'     ,spaced:true },
+        /* 27 */    { exp:lex.handlecode    ,type:'keyword'     ,if:-1          ,spaced:true },
+        /* 28 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,goto:6             ,spaced:true },
+        /* 29 */    { exp:lex.fmim_tag      ,type:'keyword'     ,if:-3          ,spaced:true },
+        /* 30 */    { exp:lex.clsref        ,type:'classname2'  ,if:-4          ,spaced:true },
+        /* 31 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-5          ,goto:3             ,spaced:true },
+        /* 32 */    { exp:lex.ident         ,type:'fieldname'   ,if:-6          ,spaced:true },
+        /* 33 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-7          ,spaced:true },
+        /* 34 */    { exp:lex._fieldattr    ,type:'directive'   ,opt:true       ,spaced:true    ,pushctx:'fieldattributes'}
                 ]
             },
 
             {
                 id:'END', tokens:[
-                    { exp:lex._end                  ,type:'directive' },
-                    { exp:/linenumbertable\b/       ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'linenumbertable'       ,goto:100 },
-                    { exp:/innerclasses\b/          ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'innerclasses'          ,goto:100 },
-                    { exp:/localvariabletable\b/    ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'localvariabletable'    ,goto:100 },
-                    { exp:/localvariabletypetable\b/,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'localvariabletypetable',goto:100 },
-                    { exp:/annotation\b/            ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'annotation'            ,goto:100 },
-                    { exp:/stack\b/                 ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'stack'                 ,goto:100 },
-                    { exp:/methodparameters\b/      ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'methodparameters'      ,goto:100 },
-                    { exp:/method\b/                ,type:'directive'   ,opt:true   ,spaced:true    ,goto:100 },
-                    { exp:/code\b/                  ,type:'directive'   ,opt:true   ,spaced:true    ,goto:100 },
-                    { exp:/class\b/                 ,type:'directive'   ,opt:true   ,spaced:true    ,goto:100 },
-                    { exp:/fieldattributes\b/       ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'fieldattributes'       ,goto:100 },
-                    { exp:/runtime\b/               ,type:'directive'               ,spaced:true    ,popctx:'runtime' },
+        /* 0  */    { exp:lex._end                  ,type:'directive' },
+        /* 1  */    { exp:/linenumbertable\b/       ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'linenumbertable'       ,goto:100 },
+        /* 2  */    { exp:/innerclasses\b/          ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'innerclasses'          ,goto:100 },
+        /* 3  */    { exp:/localvariabletable\b/    ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'localvariabletable'    ,goto:100 },
+        /* 4  */    { exp:/localvariabletypetable\b/,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'localvariabletypetable',goto:100 },
+        /* 5  */    { exp:/annotation\b/            ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'annotation'            ,goto:100 },
+        /* 6  */    { exp:/stack\b/                 ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'stack'                 ,goto:100 },
+        /* 7  */    { exp:/methodparameters\b/      ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'methodparameters'      ,goto:100 },
+        /* 8  */    { exp:/method\b/                ,type:'directive'   ,opt:true   ,spaced:true    ,goto:100 },
+        /* 9  */    { exp:/code\b/                  ,type:'directive'   ,opt:true   ,spaced:true    ,goto:100 },
+        /* 10 */    { exp:/class\b/                 ,type:'directive'   ,opt:true   ,spaced:true    ,goto:100 },
+        /* 11 */    { exp:/fieldattributes\b/       ,type:'directive'   ,opt:true   ,spaced:true    ,popctx:'fieldattributes'       ,goto:100 },
+        /* 12 */    { exp:/runtime\b/               ,type:'directive'               ,spaced:true    ,popctx:'runtime' },
                 ]
             },
 
@@ -215,14 +342,14 @@
 
             {
                 id:'LINENUMBERTABLE_ITEM', chkctx:'linenumbertable', tokens:[
-                /* 0  */    { exp:lex.label         ,type:'atom' },
-                /* 1  */    { exp:lex.NAT_LITERAL   ,type:'number'      ,opt:true       ,spaced:true },
-            ]
+        /* 0  */    { exp:lex.label         ,type:'atom' },
+        /* 1  */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,spaced:true    ,check:checks.u16 },
+                ]
             },
 
             {
                 id:'LOCALVARIABLETABLE_ITEM', chkctx:'localvariabletable', tokens:[
-        /* 0  */    { exp:lex.NAT_LITERAL   ,type:'directive' },
+        /* 0  */    { exp:lex.INT_LITERAL   ,type:'directive'   ,check:checks.u16 },
         /* 1  */    { exp:lex.is            ,type:'keyword'     ,spaced:true },
         /* 2  */    { exp:lex.utfref        ,type:'fieldname'   ,spaced:true },
         /* 3  */    { exp:lex.utfref        ,type:'fieldtype'   ,spaced:true },
@@ -235,7 +362,7 @@
 
             {
                 id:'LOCALVARIABLETYPETABLE_ITEM', chkctx:'localvariabletypetable', tokens:[
-        /* 0  */    { exp:lex.NAT_LITERAL   ,type:'directive' },
+        /* 0  */    { exp:lex.INT_LITERAL   ,type:'directive'   ,check:checks.u16 },
         /* 1  */    { exp:lex.is            ,type:'keyword'     ,spaced:true },
         /* 2  */    { exp:lex.utfref        ,type:'fieldname'   ,spaced:true },
         /* 3  */    { exp:lex.utfref        ,type:'fieldtype'   ,spaced:true },
@@ -261,7 +388,7 @@
         /* 1  */    { exp:lex.full          ,type:'directive'   ,opt:true       ,goto:100       ,pushctx:'stack'},
         /* 2  */    { exp:lex.same          ,type:'directive'   ,opt:true       ,goto:100 },
         /* 3  */    { exp:lex.chop          ,type:'directive'   ,opt:true },
-        /* 4  */    { exp:lex.NAT_LITERAL   ,type:'number'      ,if:-1          ,goto:100 },
+        /* 4  */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,goto:100       ,check:checks['1_4'] },
         /* 5  */    { exp:lex.stack_1       ,type:'directive'   ,opt:true },
         /* 6  */    { exp:lex.vertypec      ,type:'keyword'     ,opt:true       ,if:-1          ,goto:100 },
         /* 7  */    { exp:lex.vertypeo      ,type:'keyword'     ,opt:true       ,if:-2 },
@@ -284,7 +411,6 @@
         /* 24 */    { exp:lex.clsref        ,type:'classname2'  ,if:-1          ,goto:3         ,spaced:true },
         /* 25 */    { exp:lex.vertypeu      ,type:'keyword'     ,opt:true       ,if:-14 },
         /* 26 */    { exp:lex.label         ,type:'atom'        ,if:-1          ,goto:1         ,spaced:true },
-
                 ]
             },
             {
@@ -332,7 +458,7 @@
         /* 1  */    { exp:lex.op_none       ,type:'op'          ,opt:true       ,goto:100 },
 
         /* 2  */    { exp:lex.op_short      ,type:'op'          ,opt:true },
-        /* 3  */    { exp:lex.NAT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100 },
+        /* 3  */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100   ,check:checks.u8 },
 
         /* 4  */    { exp:lex.op_lbl        ,type:'op'          ,opt:true },
         /* 5  */    { exp:lex.label         ,type:'atom'        ,if:-1          ,spaced:true    ,goto:100 },
@@ -344,18 +470,18 @@
         /* 9  */    { exp:lex.clsref        ,type:'classname2'  ,if:-1          ,spaced:true    ,goto:100 },
 
         /* 10 */    { exp:lex.op_bipush     ,type:'op'          ,opt:true },
-        /* 11 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100 },
+        /* 11 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100   ,check:checks.s8 },
 
         /* 12 */    { exp:lex.op_sipush     ,type:'op'          ,opt:true },
-        /* 13 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100 },
+        /* 13 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100   ,check:checks.s16 },
 
         /* 14 */    { exp:lex.op_iinc       ,type:'op'          ,opt:true },
-        /* 15 */    { exp:lex.NAT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true },
-        /* 16 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-2          ,spaced:true    ,goto:100 },
+        /* 15 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,check:checks.u8 },
+        /* 16 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-2          ,spaced:true    ,goto:100   ,check:checks.s8 },
 
         /* 17 */    { exp:lex.op_cls_int    ,type:'op'          ,opt:true },
         /* 18 */    { exp:lex.clsref        ,type:'classname2'  ,if:-1 },
-        /* 19 */    { exp:lex.NAT_LITERAL   ,type:'number'      ,if:-2          ,spaced:true    ,goto:100 },
+        /* 19 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-2          ,spaced:true    ,goto:100   ,check:checks.u8 },
 
         /* 20 */    { exp:lex.op_fmim       ,type:'op'          ,opt:true },
         /* 21 */    { exp:lex.CPREF         ,type:'atom'        ,opt:true       ,if:-1          ,spaced:true    ,goto:100 },
@@ -366,51 +492,60 @@
         /* 26 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-4          ,spaced:true    ,goto:100 },
 
         /* 27 */    { exp:lex.tableswitch   ,type:'op'          ,opt:true       ,pushctx:'tableswitch' },
-        /* 28 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100 },
+        /* 28 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100       ,check:checks.s32},
 
-        /* 36 */    { exp:lex.op_ldc        ,type:'op'          ,opt:true },
-        /* 37 */    { exp:lex.CPREF         ,type:'atom'        ,opt:true       ,if:-1          ,goto:100       ,spaced:true },
-        /* 38 */    { exp:lex.FLOAT_LITERAL ,type:'number'      ,opt:true       ,if:-2          ,goto:100       ,spaced:true  },
-        /* 39 */    { exp:lex.LONG_LITERAL  ,type:'number'      ,opt:true       ,if:-3          ,goto:100       ,spaced:true  },
-        /* 40 */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,if:-4          ,goto:100       ,spaced:true  },
-        /* 41 */    { exp:lex.STR_LITERAL   ,type:'string'      ,opt:true       ,if:-5          ,goto:100       ,spaced:true  },
-        /* 42 */    { exp:lex.class         ,type:'keyword'     ,opt:true       ,if:-6          ,spaced:true  },
-        /* 43 */    { exp:lex.utfref        ,type:'classname2'  ,if:-1          ,goto:100       ,spaced:true  },
-        /* 44 */    { exp:lex.methodtype    ,type:'keyword'     ,opt:true       ,if:-8          ,spaced:true  },
-        /* 45 */    { exp:lex.utfref        ,type:'fieldname'   ,if:-1          ,goto:100       ,spaced:true },
-        /* 46 */    { exp:lex.methodhandle  ,type:'keyword'     ,if:-10         ,spaced:true },
-        /* 47 */    { exp:lex.handlecode    ,type:'keyword'     ,if:-1          ,spaced:true },
-        /* 48 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,goto:100        ,spaced:true },
-        /* 49 */    { exp:lex.fmim_tag      ,type:'keyword'     ,if:-3          ,spaced:true },
-        /* 50 */    { exp:lex.clsref        ,type:'classname2'  ,if:-4          ,spaced:true },
-        /* 51 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-5          ,goto:100        ,spaced:true },
-        /* 52 */    { exp:lex.ident         ,type:'fieldname'   ,if:-6          ,spaced:true },
-        /* 53 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-7          ,goto:100       ,spaced:true },
+        /* 29 */    { exp:lex.op_ldc        ,type:'op'          ,opt:true },
+        /* 30 */    { exp:lex.CPREF         ,type:'atom'        ,opt:true       ,if:-1          ,goto:100       ,spaced:true },
+        /* 31 */    { exp:lex.FLOAT_LITERAL ,type:'number'      ,opt:true       ,if:-2          ,goto:100       ,spaced:true  },
+        /* 32 */    { exp:lex.DOUBLE_LITERAL,type:'number'      ,opt:true       ,if:-3          ,goto:100       ,spaced:true  },
+        /* 33 */    { exp:lex.LONG_LITERAL  ,type:'number'      ,opt:true       ,if:-4          ,goto:100       ,spaced:true    ,check:checks.s64 },
+        /* 34 */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,if:-5          ,goto:100       ,spaced:true    ,check:checks.s32 },
+        /* 35 */    { exp:lex.STR_LITERAL   ,type:'string'      ,opt:true       ,if:-6          ,goto:100       ,spaced:true  },
+        /* 36 */    { exp:lex.class         ,type:'keyword'     ,opt:true       ,if:-7          ,spaced:true  },
+        /* 37 */    { exp:lex.utfref        ,type:'classname2'  ,if:-1          ,goto:100       ,spaced:true  },
+        /* 38 */    { exp:lex.methodtype    ,type:'keyword'     ,opt:true       ,if:-9          ,spaced:true  },
+        /* 39 */    { exp:lex.utfref        ,type:'fieldname'   ,if:-1          ,goto:100       ,spaced:true },
+        /* 40 */    { exp:lex.methodhandle  ,type:'keyword'     ,if:-11         ,spaced:true },
+        /* 41 */    { exp:lex.handlecode    ,type:'keyword'     ,if:-1          ,spaced:true },
+        /* 42 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,goto:100        ,spaced:true },
+        /* 43 */    { exp:lex.fmim_tag      ,type:'keyword'     ,if:-3          ,spaced:true },
+        /* 44 */    { exp:lex.clsref        ,type:'classname2'  ,if:-4          ,spaced:true },
+        /* 45 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-5          ,goto:100        ,spaced:true },
+        /* 46 */    { exp:lex.ident         ,type:'fieldname'   ,if:-6          ,spaced:true },
+        /* 47 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-7          ,goto:100       ,spaced:true },
 
-        /* 54 */    { exp:lex.lookupswitch  ,type:'op'          ,opt:true       ,goto:100       ,pushctx:'lookupswitch' },
+        /* 48 */    { exp:lex.lookupswitch  ,type:'op'          ,opt:true       ,goto:100       ,pushctx:'lookupswitch' },
 
-        /* 55 */    { exp:lex.wide          ,type:'op'          ,opt:true },
-        /* 56 */    { exp:lex.op_short      ,type:'op'          ,opt:true       ,if:-1 },
-        /* 57 */    { exp:lex.NAT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100 },
-        /* 58 */    { exp:lex.op_iinc       ,type:'op'          ,if:-3},
-        /* 59 */    { exp:lex.NAT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true },
-        /* 60 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-2          ,spaced:true    ,goto:100 },
+        /* 49 */    { exp:lex.wide          ,type:'op'          ,opt:true },
+        /* 50 */    { exp:lex.op_short      ,type:'op'          ,opt:true       ,if:-1 },
+        /* 51 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,goto:100   ,check:checks.u16 },
+        /* 52 */    { exp:lex.op_iinc       ,type:'op'          ,if:-3},
+        /* 53 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,spaced:true    ,check:checks.u16 },
+        /* 54 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-2          ,spaced:true    ,goto:100   ,check:checks.s16 },
 
-        /* 61 */    { exp:lex.op_invint     ,type:'op'          ,opt:true },
-        /* 62 */    { exp:lex.CPREF         ,type:'atom'        ,opt:true       ,if:-1          ,spaced:true    ,goto:6 },
-        /* 63 */    { exp:lex.fmim_tag      ,type:'keyword'     ,if:-2          ,spaced:true },
-        /* 64 */    { exp:lex.clsref        ,type:'classname2'  ,if:-1          ,spaced:true },
-        /* 65 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,spaced:true    ,goto:3 },
-        /* 66 */    { exp:lex.ident         ,type:'fieldname'   ,if:-3          ,spaced:true },
-        /* 67 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-4          ,spaced:true    ,goto:1 },
-        /* 68 */    { exp:lex.NAT_LITERAL   ,type:'number'      ,if:-7          ,spaced:true    ,goto:100 },
+        /* 55 */    { exp:lex.op_invdyn     ,type:'op'          ,opt:true },
+        /* 56 */    { exp:lex.CPREF         ,type:'atom'        ,opt:true       ,if:-1          ,spaced:true    ,goto:100 },
+        /* 57 */    { exp:lex.invdyn_tag    ,type:'keyword'     ,if:-2          ,spaced:true },
+        /* 58 */    { exp:lex.BSREF         ,type:'atom'        ,if:-1          ,spaced:true },
+        /* 59 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,spaced:true    ,goto:100 },
+        /* 60 */    { exp:lex.ident         ,type:'fieldname'   ,if:-3          ,spaced:true },
+        /* 61 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-4          ,spaced:true    ,goto:100 },
 
+
+        /* 62 */    { exp:lex.op_invint     ,type:'op'          ,opt:true },
+        /* 63 */    { exp:lex.CPREF         ,type:'atom'        ,opt:true       ,if:-1          ,spaced:true    ,goto:6 },
+        /* 64 */    { exp:lex.fmim_tag      ,type:'keyword'     ,if:-2          ,spaced:true },
+        /* 65 */    { exp:lex.clsref        ,type:'classname2'  ,if:-1          ,spaced:true },
+        /* 66 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,spaced:true    ,goto:3 },
+        /* 67 */    { exp:lex.ident         ,type:'fieldname'   ,if:-3          ,spaced:true },
+        /* 68 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-4          ,spaced:true    ,goto:1 },
+        /* 69 */    { exp:lex.INT_LITERAL   ,type:'number'      ,opt:true       ,if:-7          ,spaced:true    ,goto:100   ,check:checks.u8},
                 ]
             },
 
             {
                 id:'LOOKUPSWITCH_ENTRY', chkctx:'lookupswitch', tokens:[
-        /* 0  */    { exp:lex.NAT_LITERAL   ,type:'directive' },
+        /* 0  */    { exp:lex.INT_LITERAL   ,type:'directive'   ,check:checks.s32 },
         /* 1  */    { exp:lex.colon         ,type:'keyword'     ,spaced:true },
         /* 2  */    { exp:lex.label         ,type:'atom'        ,spaced:true },
 
@@ -439,110 +574,109 @@
 
             {
                 id:'ATTRIBUTE', tokens:[
-                    { exp:/.attribute\b/    ,type:'directive'       ,opt:true },
-                    { exp:lex.utfref        ,type:'atom'            ,if:-1          ,spaced:true },
-                    { exp:/length\b/        ,type:'keyword'         ,if:-2          ,opt:true       ,spaced:true },
-                    { exp:lex.NAT_LITERAL   ,type:'atom'            ,if:-1          ,spaced:true },
+        /* 0  */    { exp:/.attribute\b/    ,type:'directive'       ,opt:true },
+        /* 1  */    { exp:lex.utfref        ,type:'atom'            ,if:-1          ,spaced:true },
+        /* 2  */    { exp:/length\b/        ,type:'keyword'         ,if:-2          ,opt:true       ,spaced:true },
+        /* 3  */    { exp:lex.INT_LITERAL   ,type:'atom'            ,if:-1          ,spaced:true    ,check:checks.u32 },
 
-                    { exp:lex.STR_LITERAL   ,type:'string'          ,if:-4          ,opt:true       ,spaced:true        ,goto:200 },
+        /* 4  */    { exp:lex.STR_LITERAL   ,type:'string'          ,if:-4          ,opt:true       ,spaced:true        ,goto:200 },
 
-                    { exp:lex._lntable      ,type:'directive'       ,opt:true       ,pushctx:'linenumbertable'          ,goto:200 },
+        /* 5  */    { exp:lex._lntable      ,type:'directive'       ,opt:true       ,pushctx:'linenumbertable'          ,goto:200 },
 
-                    { exp:lex._lvartable    ,type:'directive'       ,opt:true       ,pushctx:'localvariabletable'       ,goto:200 },
+        /* 6  */    { exp:lex._lvartable    ,type:'directive'       ,opt:true       ,pushctx:'localvariabletable'       ,goto:200 },
 
-                    { exp:lex._lvarttable   ,type:'directive'       ,opt:true       ,pushctx:'localvariabletypetable'   ,goto:200 },
+        /* 7  */    { exp:lex._lvarttable   ,type:'directive'       ,opt:true       ,pushctx:'localvariabletypetable'   ,goto:200 },
 
-                    { exp:lex._code         ,type:'directive'       ,opt:true },
-                    { exp:lex.stack         ,type:'directive'       ,if:-1 },
-                    { exp:lex.NAT_LITERAL   ,type:'number'          ,if:-2 },
-                    { exp:lex.locals        ,type:'directive'       ,if:-3 },
-                    { exp:lex.NAT_LITERAL   ,type:'number'          ,if:-4          ,goto:200 },
+        /* 8  */    { exp:lex._code         ,type:'directive'       ,opt:true },
+        /* 9  */    { exp:lex.stack         ,type:'directive'       ,if:-1 },
+        /* 10 */    { exp:lex.INT_LITERAL   ,type:'number'          ,if:-2          ,check:checks.u16 },
+        /* 11 */    { exp:lex.locals        ,type:'directive'       ,if:-3 },
+        /* 12 */    { exp:lex.INT_LITERAL   ,type:'number'          ,if:-4          ,goto:200       ,check:checks.u16 },
 
-                    { exp:lex._stackmaptable,type:'directive'       ,opt:true       ,goto:200 },
+        /* 13 */    { exp:lex._stackmaptable,type:'directive'       ,opt:true       ,goto:200 },
 
-                    { exp:lex._sourcefile   ,type:'directive'       ,opt:true },
-                    { exp:lex.CPREF         ,type:'string'          ,if:-1          ,opt:true       ,goto:200 },
-                    { exp:lex.STR_LITERAL   ,type:'string'          ,if:-2          ,goto:200 },
+        /* 14 */    { exp:lex._sourcefile   ,type:'directive'       ,opt:true },
+        /* 15 */    { exp:lex.CPREF         ,type:'string'          ,if:-1          ,opt:true       ,goto:200 },
+        /* 16 */    { exp:lex.STR_LITERAL   ,type:'string'          ,if:-2          ,goto:200 },
 
-                    { exp:lex._innerclasses ,type:'directive'       ,opt:true       ,pushctx:'innerclasses'             ,goto:200 },
+        /* 17 */    { exp:lex._innerclasses ,type:'directive'       ,opt:true       ,pushctx:'innerclasses'             ,goto:200 },
 
-                    { exp:lex._constantvalue,type:'directive'       ,opt:true },
-                    { exp:lex.CPREF         ,type:'atom'            ,opt:true       ,if:-1          ,goto:200           ,spaced:true },
-                    { exp:lex.FLOAT_LITERAL ,type:'number'          ,opt:true       ,if:-2          ,goto:200           ,spaced:true },
-                    { exp:lex.LONG_LITERAL  ,type:'number'          ,opt:true       ,if:-3          ,goto:200           ,spaced:true },
-                    { exp:lex.INT_LITERAL   ,type:'number'          ,opt:true       ,if:-4          ,goto:200           ,spaced:true },
-                    { exp:lex.STR_LITERAL   ,type:'string'          ,opt:true       ,if:-5          ,goto:200           ,spaced:true },
-                    { exp:lex.class         ,type:'keyword'         ,opt:true       ,if:-6          ,spaced:true },
-                    { exp:lex.utfref        ,type:'classname2'      ,if:-1          ,goto:200       ,spaced:true },
-                    { exp:lex.methodtype    ,type:'keyword'         ,opt:true       ,if:-8          ,spaced:true },
-                    { exp:lex.utfref        ,type:'fieldname'       ,if:-1          ,goto:200       ,spaced:true },
-                    { exp:lex.methodhandle  ,type:'keyword'         ,if:-10         ,spaced:true },
-                    { exp:lex.handlecode    ,type:'keyword'         ,if:-1          ,spaced:true },
-                    { exp:lex.CPREF         ,type:'fieldname'       ,opt:true       ,if:-2          ,goto:200           ,spaced:true },
-                    { exp:lex.fmim_tag      ,type:'keyword'         ,if:-3          ,spaced:true },
-                    { exp:lex.clsref        ,type:'classname2'      ,if:-4          ,spaced:true },
-                    { exp:lex.CPREF         ,type:'fieldname'       ,opt:true       ,if:-5          ,goto:200           ,spaced:true },
-                    { exp:lex.ident         ,type:'fieldname'       ,if:-6          ,spaced:true },
-                    { exp:lex.utfref        ,type:'fieldtype'       ,if:-7          ,spaced:true    ,goto:200 },
+        /* 18 */    { exp:lex._constantvalue,type:'directive'       ,opt:true },
+        /* 19 */    { exp:lex.CPREF         ,type:'atom'            ,opt:true       ,if:-1          ,goto:200           ,spaced:true },
+        /* 20 */    { exp:lex.FLOAT_LITERAL ,type:'number'          ,opt:true       ,if:-2          ,goto:200           ,spaced:true },
+        /* 21 */    { exp:lex.DOUBLE_LITERAL,type:'number'          ,opt:true       ,if:-3          ,goto:200           ,spaced:true },
+        /* 22 */    { exp:lex.LONG_LITERAL  ,type:'number'          ,opt:true       ,if:-4          ,goto:200           ,spaced:true    ,check:checks.s64 },
+        /* 23 */    { exp:lex.INT_LITERAL   ,type:'number'          ,opt:true       ,if:-5          ,goto:200           ,spaced:true    ,check:checks.s32 },
+        /* 24 */    { exp:lex.STR_LITERAL   ,type:'string'          ,opt:true       ,if:-6          ,goto:200           ,spaced:true },
+        /* 25 */    { exp:lex.class         ,type:'keyword'         ,opt:true       ,if:-7          ,spaced:true },
+        /* 26 */    { exp:lex.utfref        ,type:'classname2'      ,if:-1          ,goto:200       ,spaced:true },
+        /* 27 */    { exp:lex.methodtype    ,type:'keyword'         ,opt:true       ,if:-9          ,spaced:true },
+        /* 28 */    { exp:lex.utfref        ,type:'fieldname'       ,if:-1          ,goto:200       ,spaced:true },
+        /* 29 */    { exp:lex.methodhandle  ,type:'keyword'         ,if:-11         ,spaced:true },
+        /* 30 */    { exp:lex.handlecode    ,type:'keyword'         ,if:-1          ,spaced:true },
+        /* 31 */    { exp:lex.CPREF         ,type:'fieldname'       ,opt:true       ,if:-2          ,goto:200           ,spaced:true },
+        /* 32 */    { exp:lex.fmim_tag      ,type:'keyword'         ,if:-3          ,spaced:true },
+        /* 33 */    { exp:lex.clsref        ,type:'classname2'      ,if:-4          ,spaced:true },
+        /* 34 */    { exp:lex.CPREF         ,type:'fieldname'       ,opt:true       ,if:-5          ,goto:200           ,spaced:true },
+        /* 35 */    { exp:lex.ident         ,type:'fieldname'       ,if:-6          ,spaced:true },
+        /* 36 */    { exp:lex.utfref        ,type:'fieldtype'       ,if:-7          ,spaced:true    ,goto:200 },
 
-                    { exp:lex._enclosing    ,type:'directive'       ,opt:true },
-                    { exp:lex.method        ,type:'directive'       ,if:-1          ,spaced:true },
-                    { exp:lex.clsref        ,type:'classname2'      ,if:-2          ,spaced:true },
-                    { exp:lex.CPREF         ,type:'fieldname'       ,if:-3          ,opt:true       ,goto:200           ,spaced:true },
-                    { exp:lex.ident         ,type:'fieldname'       ,if:-4          ,spaced:true },
-                    { exp:lex.utfref        ,type:'fieldtype'       ,if:-5          ,spaced:true    ,goto:200 },
+        /* 37 */    { exp:lex._enclosing    ,type:'directive'       ,opt:true },
+        /* 38 */    { exp:lex.method        ,type:'directive'       ,if:-1          ,spaced:true },
+        /* 39 */    { exp:lex.clsref        ,type:'classname2'      ,if:-2          ,spaced:true },
+        /* 40 */    { exp:lex.CPREF         ,type:'fieldname'       ,if:-3          ,opt:true       ,goto:200           ,spaced:true },
+        /* 41 */    { exp:lex.ident         ,type:'fieldname'       ,if:-4          ,spaced:true },
+        /* 42 */    { exp:lex.utfref        ,type:'fieldtype'       ,if:-5          ,spaced:true    ,goto:200 },
 
-                    { exp:lex._signature    ,type:'directive'       ,opt:true },
-                    { exp:lex.utfref        ,type:'fieldtype'       ,if:-1          ,spaced:true    ,goto:200 },
+        /* 43 */    { exp:lex._signature    ,type:'directive'       ,opt:true },
+        /* 44 */    { exp:lex.utfref        ,type:'fieldtype'       ,if:-1          ,spaced:true    ,goto:200 },
 
-                    { exp:lex._runtime      ,type:'directive'       ,opt:true       ,pushctx:'runtime'},
-                    { exp:lex.visibility    ,type:'directive'       ,if:-1          ,spaced:true },
-                    { exp:lex.annotations   ,type:'directive'       ,if:-2          ,spaced:true    ,goto:200 },
+        /* 45 */    { exp:lex._runtime      ,type:'directive'       ,opt:true       ,pushctx:'runtime'},
+        /* 46 */    { exp:lex.visibility    ,type:'directive'       ,if:-1          ,spaced:true },
+        /* 47 */    { exp:lex.annotations   ,type:'directive'       ,if:-2          ,spaced:true    ,goto:200 },
 
-                    { exp:lex._synthetic    ,type:'directive'       ,opt:true       ,goto:200 },
+        /* 48 */    { exp:lex._synthetic    ,type:'directive'       ,opt:true       ,goto:200 },
 
-                    { exp:lex._srcdebugext  ,type:'directive'       ,opt:true },
-                    { exp:lex.STR_LITERAL   ,type:'string'          ,if:-1          ,goto:200       ,spaced:true },
+        /* 49 */    { exp:lex._srcdebugext  ,type:'directive'       ,opt:true },
+        /* 50 */    { exp:lex.STR_LITERAL   ,type:'string'          ,if:-1          ,goto:200       ,spaced:true },
 
-                    { exp:lex._methodparams ,type:'directive'       ,opt:true       ,pushctx:'methodparameters'         ,goto:200 },
+        /* 51 */    { exp:lex._methodparams ,type:'directive'       ,opt:true       ,pushctx:'methodparameters'         ,goto:200 },
 
-                    { exp:lex._bsmethods    ,type:'directive'       ,opt:true       ,goto:200 },
+        /* 52 */    { exp:lex._bsmethods    ,type:'directive'       ,opt:true       ,goto:200 },
 
-                    { exp:lex._deprecated   ,type:'directive'       ,opt:true       ,goto:200 },
+        /* 53 */    { exp:lex._deprecated   ,type:'directive'       ,opt:true       ,goto:200 },
 
-                    { exp:lex._annotationdef,type:'directive'       ,opt:true },
-                    { exp:lex.prim_tag      ,type:'keyword'         ,opt:true       ,if:-1          ,spaced:true },
-                    { exp:lex.CPREF         ,type:'atom'            ,opt:true       ,if:-1          ,goto:200           ,spaced:true },
-                    { exp:lex.FLOAT_LITERAL ,type:'number'          ,opt:true       ,if:-2          ,goto:200           ,spaced:true },
-                    { exp:lex.LONG_LITERAL  ,type:'number'          ,opt:true       ,if:-3          ,goto:200           ,spaced:true },
-                    { exp:lex.INT_LITERAL   ,type:'number'          ,opt:true       ,if:-4          ,goto:200           ,spaced:true },
-                    { exp:lex.STR_LITERAL   ,type:'string'          ,opt:true       ,if:-5          ,goto:200           ,spaced:true },
-                    { exp:lex.class         ,type:'keyword'         ,opt:true       ,if:-6          ,spaced:true },
-                    { exp:lex.utfref        ,type:'classname2'      ,if:-1          ,goto:200       ,spaced:true },
-                    { exp:lex.methodtype    ,type:'keyword'         ,opt:true       ,if:-8          ,spaced:true },
-                    { exp:lex.utfref        ,type:'fieldname'       ,if:-1          ,goto:200       ,spaced:true },
-                    { exp:lex.methodhandle  ,type:'keyword'         ,if:-10         ,spaced:true },
-                    { exp:lex.handlecode    ,type:'keyword'         ,if:-1          ,spaced:true },
-                    { exp:lex.CPREF         ,type:'fieldname'       ,opt:true       ,if:-2          ,goto:200           ,spaced:true },
-                    { exp:lex.fmim_tag      ,type:'keyword'         ,if:-3          ,spaced:true },
-                    { exp:lex.clsref        ,type:'classname2'      ,if:-4          ,spaced:true },
-                    { exp:lex.CPREF         ,type:'fieldname'       ,opt:true       ,if:-5          ,goto:200           ,spaced:true },
-                    { exp:lex.ident         ,type:'fieldname'       ,if:-6          ,spaced:true },
-                    { exp:lex.utfref        ,type:'fieldtype'       ,if:-7          ,spaced:true    ,goto:200 },
-                    { exp:/string\b/        ,type:'keyword'         ,opt:true       ,if:-19         ,spaced:true },
-                    { exp:lex.utfref        ,type:'string'          ,if:-1          ,goto:200       ,spaced:true },
-                    { exp:/class\b/         ,type:'keyword'         ,opt:true       ,if:-21         ,spaced:true },
-                    { exp:lex.utfref        ,type:'classname2'      ,if:-1          ,goto:200       ,spaced:true },
-                    { exp:/enum\b/          ,type:'keyword'         ,opt:true       ,if:-23         ,spaced:true },
-                    { exp:lex.utfref        ,type:'fieldname'       ,if:-1          ,spaced:true },
-                    { exp:lex.utfref        ,type:'fieldtype'       ,if:-2          ,goto:200       ,spaced:true },
-                    { exp:/array\b/         ,type:'keyword'         ,opt:true       ,if:-26         ,goto:200    ,spaced:true ,pushctx:'array'},
-                    { exp:/annotation\b/    ,type:'keyword'         ,if:-27         ,goto:200       ,spaced:true ,pushctx:'annotation'},
+        /* 54 */    { exp:lex._annotationdef,type:'directive'       ,opt:true },
+        /* 55 */    { exp:lex.prim_tag      ,type:'keyword'         ,opt:true       ,if:-1          ,spaced:true },
+        /* 56 */    { exp:lex.CPREF         ,type:'atom'            ,opt:true       ,if:-1          ,goto:200           ,spaced:true },
+        /* 57 */    { exp:lex.FLOAT_LITERAL ,type:'number'          ,opt:true       ,if:-2          ,goto:200           ,spaced:true },
+        /* 58 */    { exp:lex.LONG_LITERAL  ,type:'number'          ,opt:true       ,if:-3          ,goto:200           ,spaced:true    ,check:checks.s64 },
+        /* 59 */    { exp:lex.INT_LITERAL   ,type:'number'          ,opt:true       ,if:-4          ,goto:200           ,spaced:true    ,check:checks.s32 },
+        /* 60 */    { exp:lex.STR_LITERAL   ,type:'string'          ,opt:true       ,if:-5          ,goto:200           ,spaced:true },
+        /* 61 */    { exp:lex.class         ,type:'keyword'         ,opt:true       ,if:-6          ,spaced:true },
+        /* 62 */    { exp:lex.utfref        ,type:'classname2'      ,if:-1          ,goto:200       ,spaced:true },
+        /* 63 */    { exp:lex.methodtype    ,type:'keyword'         ,opt:true       ,if:-8          ,spaced:true },
+        /* 64 */    { exp:lex.utfref        ,type:'fieldname'       ,if:-1          ,goto:200       ,spaced:true },
+        /* 65 */    { exp:lex.methodhandle  ,type:'keyword'         ,if:-10         ,spaced:true },
+        /* 66 */    { exp:lex.handlecode    ,type:'keyword'         ,if:-1          ,spaced:true },
+        /* 67 */    { exp:lex.CPREF         ,type:'fieldname'       ,opt:true       ,if:-2          ,goto:200           ,spaced:true },
+        /* 68 */    { exp:lex.fmim_tag      ,type:'keyword'         ,if:-3          ,spaced:true },
+        /* 69 */    { exp:lex.clsref        ,type:'classname2'      ,if:-4          ,spaced:true },
+        /* 70 */    { exp:lex.CPREF         ,type:'fieldname'       ,opt:true       ,if:-5          ,goto:200           ,spaced:true },
+        /* 71 */    { exp:lex.ident         ,type:'fieldname'       ,if:-6          ,spaced:true },
+        /* 72 */    { exp:lex.utfref        ,type:'fieldtype'       ,if:-7          ,spaced:true    ,goto:200 },
+        /* 73 */    { exp:/string\b/        ,type:'keyword'         ,opt:true       ,if:-19         ,spaced:true },
+        /* 74 */    { exp:lex.utfref        ,type:'string'          ,if:-1          ,goto:200       ,spaced:true },
+        /* 75 */    { exp:/class\b/         ,type:'keyword'         ,opt:true       ,if:-21         ,spaced:true },
+        /* 76 */    { exp:lex.utfref        ,type:'classname2'      ,if:-1          ,goto:200       ,spaced:true },
+        /* 77 */    { exp:/enum\b/          ,type:'keyword'         ,opt:true       ,if:-23         ,spaced:true },
+        /* 78 */    { exp:lex.utfref        ,type:'fieldname'       ,if:-1          ,spaced:true },
+        /* 79 */    { exp:lex.utfref        ,type:'fieldtype'       ,if:-2          ,goto:200       ,spaced:true },
+        /* 80 */    { exp:/array\b/         ,type:'keyword'         ,opt:true       ,if:-26         ,goto:200    ,spaced:true ,pushctx:'array'},
+        /* 81 */    { exp:/annotation\b/    ,type:'keyword'         ,if:-27         ,goto:200       ,spaced:true ,pushctx:'annotation'},
 
-                    { exp:lex._exceptions   ,type:'directive' },
-                    { exp:lex.clsref        ,type:'classname2'      ,opt:true       ,if:-1          ,goto:0             ,final:true },
-
-
+        /* 82 */    { exp:lex._exceptions   ,type:'directive' },
+        /* 83 */    { exp:lex.clsref        ,type:'classname2'      ,opt:true       ,if:-1          ,goto:0             ,final:true },
                 ]
             },
 
@@ -561,44 +695,42 @@
         /* 7  */    { exp:lex.utfref        ,type:'fieldname'   ,if:-1          ,goto:100       ,spaced:true },
         /* 8  */    { exp:lex.methodhandle  ,type:'keyword'     ,opt:true },
         /* 9  */    { exp:lex.handlecode    ,type:'keyword'     ,if:-1          ,spaced:true },
-        /* 10 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,goto:100   ,spaced:true },
+        /* 10 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,goto:100       ,spaced:true },
         /* 11 */    { exp:lex.fmim_tag      ,type:'keyword'     ,if:-3          ,spaced:true },
         /* 12 */    { exp:lex.clsref        ,type:'classname2'  ,if:-4          ,spaced:true },
-        /* 13 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-5          ,goto:100   ,spaced:true },
+        /* 13 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-5          ,goto:100       ,spaced:true },
         /* 14 */    { exp:lex.ident         ,type:'fieldname'   ,if:-6          ,spaced:true },
         /* 15 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-7          ,spaced:true    ,goto:100 },
 
-        /* 16 */    { exp:lex.i_tag         ,type:'keyword'     ,opt:true },
-        /* 17 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,goto:100       ,spaced:true },
-        /* 18 */    { exp:lex.l_tag         ,type:'keyword'     ,opt:true },
-        /* 19 */    { exp:lex.LONG_LITERAL  ,type:'number'      ,if:-1          ,goto:100       ,spaced:true },
-        /* 20 */    { exp:lex.f_tag         ,type:'keyword'     ,opt:true },
-        /* 21 */    { exp:lex.FLOAT_LITERAL ,type:'number'      ,if:-1          ,goto:100       ,spaced:true },
-        /* 22 */    { exp:lex.d_tag         ,type:'keyword'     ,opt:true },
-        /* 23 */    { exp:lex.DOUBLE_LITERAL,type:'number'      ,if:-1          ,goto:100       ,spaced:true },
-        /* 24 */    { exp:lex.s_tag         ,type:'keyword'     ,opt:true },
-        /* 25 */    { exp:lex.CPREF         ,type:'string'      ,if:-1          ,opt:true       ,goto:100       ,spaced:true },
-        /* 26 */    { exp:lex.STR_LITERAL   ,type:'string'      ,if:-2          ,goto:100       ,spaced:true },
+        /* 16 */    { exp:lex.utf8          ,type:'keyword'     ,opt:true },
+        /* 17 */    { exp:lex.ident         ,type:'string'      ,if:-1          ,goto:100       ,spaced:true },
+        /* 18 */    { exp:lex.nameandtype   ,type:'keyword'     ,opt:true },
+        /* 19 */    { exp:lex.utfref        ,type:'fieldname'   ,if:-1          ,spaced:true },
+        /* 20 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-2          ,goto:100       ,spaced:true },
 
+        /* 21 */    { exp:lex.fmim_tag      ,type:'keyword'     ,opt:true       ,spaced:true },
+        /* 22 */    { exp:lex.clsref        ,type:'classname2'  ,if:-1          ,spaced:true },
+        /* 23 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,spaced:true    ,goto:100 },
+        /* 24 */    { exp:lex.ident         ,type:'fieldname'   ,if:-3          ,spaced:true },
+        /* 25 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-4          ,spaced:true    ,goto:100 },
 
-        /* 27 */    { exp:lex.utf8          ,type:'keyword'     ,opt:true },
-        /* 28 */    { exp:lex.ident         ,type:'string'      ,if:-1          ,goto:100       ,spaced:true },
-        /* 29 */    { exp:lex.nameandtype   ,type:'keyword'     ,opt:true },
-        /* 30 */    { exp:lex.utfref        ,type:'fieldname'   ,if:-1          ,spaced:true },
-        /* 31 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-2          ,goto:100       ,spaced:true },
-
-        /* 32 */    { exp:lex.fmim_tag      ,type:'keyword'     ,opt:true       ,spaced:true },
-        /* 33 */    { exp:lex.clsref        ,type:'classname2'  ,if:-1          ,spaced:true },
-        /* 34 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,spaced:true    ,goto:100 },
-        /* 35 */    { exp:lex.ident         ,type:'fieldname'   ,if:-3          ,spaced:true },
-        /* 36 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-4          ,spaced:true    ,goto:100 },
+        /* 26 */    { exp:lex.i_tag         ,type:'keyword'     ,opt:true },
+        /* 27 */    { exp:lex.INT_LITERAL   ,type:'number'      ,if:-1          ,goto:100       ,spaced:true    ,check:checks.s32 },
+        /* 28 */    { exp:lex.l_tag         ,type:'keyword'     ,opt:true },
+        /* 29 */    { exp:lex.LONG_LITERAL  ,type:'number'      ,if:-1          ,goto:100       ,spaced:true    ,check:checks.s64 },
+        /* 30 */    { exp:lex.f_tag         ,type:'keyword'     ,opt:true },
+        /* 31 */    { exp:lex.FLOAT_LITERAL ,type:'number'      ,if:-1          ,goto:100       ,spaced:true },
+        /* 32 */    { exp:lex.d_tag         ,type:'keyword'     ,opt:true },
+        /* 33 */    { exp:lex.DOUBLE_LITERAL,type:'number'      ,if:-1          ,goto:100       ,spaced:true },
+        /* 34 */    { exp:lex.s_tag         ,type:'keyword'     ,opt:true },
+        /* 35 */    { exp:lex.CPREF         ,type:'string'      ,if:-1          ,opt:true       ,goto:100       ,spaced:true },
+        /* 36 */    { exp:lex.STR_LITERAL   ,type:'string'      ,if:-2          ,goto:100       ,spaced:true },
 
         /* 37 */    { exp:lex.invdyn_tag    ,type:'keyword'     ,spaced:true },
         /* 38 */    { exp:lex.BSREF         ,type:'atom'        ,if:-1          ,spaced:true },
         /* 39 */    { exp:lex.CPREF         ,type:'fieldname'   ,opt:true       ,if:-2          ,spaced:true    ,goto:100 },
         /* 40 */    { exp:lex.ident         ,type:'fieldname'   ,if:-3          ,spaced:true },
         /* 41 */    { exp:lex.utfref        ,type:'fieldtype'   ,if:-4          ,spaced:true    ,goto:100 },
-
                 ]
             },
 
@@ -668,10 +800,12 @@
                 maxWidth = Math.max(maxWidth,msgs[n].length);
             }
             if (asmLineErrors[line]) {
-                const html = asmLineErrors[line];
+                let asmlines = asmLineErrors[line].split('\n');
+                let html = asmlines[0] +
+                    '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[1].replace(/ /g,'&nbsp;') +
+                    '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[2].replace(/ /g,'&nbsp;');
                 msgs.push(((msgs.length > 0)? ('[' + (msgs.length+1) + ']: '):'') + html);
-                // asmlines.forEach((l)=> {
-                html.split('\n').forEach((l)=> {
+                asmlines.forEach((l)=> {
                     maxWidth = Math.max(maxWidth,l.length);
                 });
             }
@@ -717,7 +851,13 @@
 
         function canTerminate (state,rule) {
             for (let i = state.step; i < rule.tokens.length; ++i) {
-                if (!(rule.tokens[i].opt || (rule.tokens[i].if!==undefined && !state.matched[i+rule.tokens[i].if]))) return false;
+                if (
+                    rule.tokens[i].exp===undefined &&
+                    rule.tokens[i].goto!==undefined &&
+                    (rule.tokens[i].if===undefined || state.matched[i+rule.tokens[i].if])
+                ) i+=rule.tokens[i].goto;
+
+                if (!(rule.tokens[i].exp===undefined || rule.tokens[i].opt || (rule.tokens[i].if!==undefined && !state.matched[i+rule.tokens[i].if]))) return false;
             }
             return true;
         }
@@ -836,9 +976,28 @@
                         if (debug) console.log(stream);
                         if (debug) console.log(stream.string);
                         if (!token) break;
+
+                        if (token.exp===undefined && token.goto!==undefined) {
+                            state.step += token.goto;
+                            continue;
+                        }
+
                         let m = stream.match(token.exp);
-                        let spacedCond = (token.spaced === undefined) || (token.spaced === state.spaced);
-                        if (m && spacedCond) {
+
+                        if (m) {
+                            if (debug) console.log('TOKENMATCH [' + token.exp + ']->[' + m[0] + ']');
+
+                            let isError = false;
+
+                            if ((token.spaced !== undefined) && (token.spaced !== state.spaced)) {
+                                if (!token.spaced) addError(state.line,'Error token `' + stream.current() + '` is separated with whitespace');
+                                else addError(state.line,'Token `' + stream.current() + '` is not separated with whitespace');
+                                isError = true;
+                            }
+
+                            state.matched[state.step] = true;
+                            state.spaced = false;
+
                             if (token.pushctx) state.context.push(token.pushctx);
                             else if (token.popctx) {
                                 if ((state.context.length > 0) &&
@@ -846,55 +1005,31 @@
                                 )  state.context.pop();
                                 else addError(state.line,'Sentence out of context `' + token.popctx + '`');
                             }
-                            state.matched[state.step] = true;
-                            if (debug) console.log('TOKENMATCH [' + token.exp + ']->[' + m[0] + ']');
-                            state.spaced = false;
+
+
+                            if (token.check && !token.check.isValid(m[0])) {
+                                addError(state.line,token.check.msg);
+                                isError = true;
+                            }
+
+
                             if(token.goto!==undefined) {
                                 if (token.goto < 0)
                                     for (let n = -1; n >= token.goto; --n) state.matched[state.step + n] = undefined;
                                 state.step += token.goto;
                             }
                             else ++state.step;
+
                             if (isLastToken(stream)) {
                                 if (!canTerminate(state,rule)) {
                                     if (debug) console.log('Error by no end of sentence');
                                     addError(state.line,'Unterminated statement');
                                     terminateLine(state);
-                                    return token.type;
+                                    return (isError)? 'error':token.type;
                                 }
                                 terminateLine(state);
                             }
-                            return token.type;
-                        }
-                        else if (m){
-                            if (token.pushctx) state.context.push(token.pushctx);
-                            else if (token.popctx) {
-                                if ((state.context.length > 0) &&
-                                    (state.context[state.context.length-1] === token.popctx)
-                                )  state.context.pop();
-                                else addError(state.line,'Sentence out of context `' + token.popctx + '`');
-                            }
-                            state.matched[state.step] = true;
-                            if (debug) console.log('TOKENMATCHSPACEERROR [' + token.exp + ']->[' + m[0] + ']');
-                            state.spaced = false;
-                            if(token.goto!==undefined) {
-                                if (token.goto < 0)
-                                    for (let n = -1; n >= token.goto; --n) state.matched[state.step + n] = undefined;
-                                state.step += token.goto;
-                            }
-                            else ++state.step;
-                            let last = isLastToken(stream);
-                            if (last && !canTerminate(state,rule)) {
-                                if (debug) console.log('Error by no end of sentence');
-                                addError(state.line,'Unterminated statement');
-                                terminateLine(state);
-                                return token.type;
-                            }
-                            if (debug) console.log('Error by token spaced condition');
-                            if (!state.spaced) addError(state.line,'Error token `' + stream.current() + '` is separated with whitespace');
-                            else addError(state.line,'Token `' + stream.current() + '` is not separated with whitespace');
-                            if (last) terminateLine(state);
-                            return 'error';
+                            return (isError)? 'error':token.type;
                         }
                         else {
                             if (debug) console.log('NOMATCH [' + token.exp + ']');

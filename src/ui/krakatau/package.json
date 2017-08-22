@@ -1,0 +1,16 @@
+{
+  "name": "krakatau",
+  "productName": "krakatau",
+  "version": "1.0.0",
+  "description": "Java assembler/disassembler",
+  "author": "Robert Grosse",
+  "license": "GPL-3.0+",
+  "main": "index.js",
+  "dependencies": {
+    "big-integer": "^1.6.24",
+    "math-float32-to-word": "^1.0.0",
+    "math-float32-from-word": "^1.0.0",
+    "math-float64-to-words": "^1.0.0",
+    "math-float64-from-words": "^1.0.0"
+  }
+}

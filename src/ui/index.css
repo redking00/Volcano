@@ -25,6 +25,10 @@ body {
     font-size: 12px;
 }
 
+pre {
+    font-family: sourcecodepro;
+}
+
 #editor {
     position: absolute;
     padding: 0;
@@ -55,6 +59,7 @@ body {
     white-space: nowrap;
     text-overflow: ellipsis;
 }
+
 #statusbar > table {
     width:100%;
     height:100%;
