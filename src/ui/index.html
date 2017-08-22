@@ -56,7 +56,10 @@
 
     const https = remote.require('https');
 
-    const kasmPath = path.resolve(__dirname, '..', 'krakatau', system, 'kasm');
+    const escapeHTML = remote.require('escape-html');
+
+    const krakatau = require('../krakatau/main.js');
+
 
     const menu = Menu.buildFromTemplate([
         {
@@ -413,6 +416,7 @@
     }
 
     function openFile(fileName) {
+        console.log('fileName', fileName)
         if (fileName.toLowerCase().endsWith(".class") || fileName.toLowerCase().endsWith(".jar")) {
             function doDisAsm(roundtrip) {
                 dialog.showOpenDialog(
@@ -430,7 +434,7 @@
             }
             showYesNoCancelDialog(
                 'This file has to be disassembled, do you want to use roundtrip mode? <br>' +
-                '<span style="font-size:10px">(Roundtrip mode creates assembly files that can roundtrip to original binary)</span>',
+                '<span style="font-size:10px">Roundtrip mode creates assembly files that are guaranteed to reassemble into the original binary, at the expense of being harder to read and edit.</span>',
                 ()=>{ doDisAsm(true); },
                 ()=>{ doDisAsm(false); },
             );
@@ -528,154 +532,60 @@
     }
 
     function disassemble(inputFile, outputDir, roundtrip) {
-        let stdoutput = '';
-        let stderror = '';
-        let lines = [];
-
         setStatusBarMessage('Disassembling...');
 
-        const { spawn } = remote.require('child_process');
-        let params = ['-d', inputFile, '-out', outputDir];
-        if (roundtrip) params.push('-roundtrip');
-        const proc = spawn(kasmPath, params);
+        try {
+            const data = fs.readFileSync(inputFile);
+            const result = krakatau.disassemble(data, roundtrip);
 
-        proc.stdout.on('data', (data) => {
-            stdoutput += data;
-            let templines = stdoutput.split('\n');
-            if (templines.length > 1) {
-                for (let n = 0; n < templines.length -2; ++n) {
-                    lines.push(templines[n]);
-                    if (templines[n].startsWith('processing target ')){
-                        let match = /(processing target )([^,]+)(, )(\d+)(\/)(\d+)( remaining)/.exec(templines[n]);
-                        if (match) {
-                            let msg = 'Processing target ' + (match[6]-match[4]+1) + ' of ' + match[6] + ' > ' + match[2];
-                            setStatusBarMessage(msg);
-                        }
-                    }
-                }
-                stdoutput = templines[templines.length-1];
-            }
-            if (debug) console.log(`stdout: ${data}`);
-        });
+            const outPath = path.join(outputDir, 'out.j');
+            fs.writeFileSync(outPath, result);
 
-        proc.stderr.on('data', (data) => {
-            stderror += data;
-            if (debug) console.log(`stderr: ${data}`);
-        });
-
-        proc.on('close', (code) => {
-            if (code == 0) {
-                if (stderror.length > 0) {
-                    showAlert('Disassembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
-                }
-                else {
-                    let templines = stdoutput.split('\n');
-                    lines.push(...templines);
-                    let results = [];
-                    for (let l in lines) {
-                        if (lines[l].startsWith('Class written to \\\\?\\')) {
-                            results.push(lines[l].replace('Class written to \\\\?\\','').replace(/(\r\n|\n|\r)/gm,''));
-                        }
-                    }
-                    if (results.length == 1) {
-                        loadFile(results[0]);
-                    }
-                    else {
-                        dialog.showOpenDialog(
-                            remote.getCurrentWindow(),
-                            {
-                                filters: [
-                                    { extensions:['j'],         name:'Krakatau source'}
-                                ],
-                                defaultPath: outputDir
-                            },
-                            function (fileNames) {
-                                if (fileNames) {
-                                    if (fileNames[0].endsWith(".j")) {
-                                        loadFile(fileNames[0]);
-                                    }
-                                    else showAlert('Can not open that file');
-                                }
-                            }
-                        );
-                    }
-                }
-            }
-            else showAlert('Disassembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
-
-            if (debug) console.log(`child process exited with code ${code}`);
-        });
+            setStatusBarMessage('Disassembled successfully.');
+            loadFile(outPath);
+        } catch (e) {
+            showAlert('Disassemble error: ' + e.toString());
+            setStatusBarMessage('Disassemble error: ' + e.toString());
+        }
     }
 
     function assemble(inputFile, outputDir) {
-        let stdoutput = "";
-        let stderror = ""
+        const source = fs.readFileSync(inputFile, {encoding: 'utf8'});
 
         setStatusBarMessage('Building...');
+        const assembled = krakatau.assemble(source);
+        let hadError = false;
+        for (const [success, result] of assembled) {
+            if (success) {
+                let {name, data} = result;
+                // TODO - handle weird filenames
+                name = name.toString('utf8');
+                const outPath = path.join(outputDir, ...name.split('/'));
+                fs.writeFileSync(outPath, data);
+                setStatusBarMessage(name + ' > assembled.');
+            } else {
+                hadError = true;
+                const {error, notes} = result.args;
+                const eh = escapeHTML;
 
-        const { spawn } = remote.require('child_process');
+                const {line, col, message, snippet, markers} = result.format(error);
+                let html = `${line}:${col} error: ${eh(message)}<pre>\n${eh(snippet)}\n${eh(markers)}\n</pre>`;
 
-        const proc = spawn(kasmPath, [inputFile, '-out', outputDir]);
+                notes.slice(0, 5).forEach(note => {
+                    const {line, col, message, snippet, markers} = result.format(note);
+                    html += `${line}:${col} note: ${eh(message)}<pre>\n${eh(snippet)}\n${eh(markers)}\n</pre>`;
+                });
 
-        proc.stdout.on('data', (data) => {
-            stdoutput += data;
-            if (debug) console.log(`stdout: ${data}`);
-        });
-
-        proc.stderr.on('data', (data) => {
-            stderror += data;
-            if (debug) console.log(`stderr: ${data}`);
-        });
-
-        proc.on('close', (code) => {
-            if (code == 0){
-                let lines = stdoutput.split('\n');
-                let results = [];
-                for (let l in lines) {
-                    if (lines[l].startsWith('Class written to \\\\?\\')) {
-                        results.push(lines[l].replace('Class written to \\\\?\\','').replace(/(\r\n|\n|\r)/gm,''));
-                    }
-                }
-                showAlert('Done.');
-                setStatusBarMessage(results[0] + ' > assembled.');
+                editor.scrollIntoView({line:line, ch:col});
+                editor.getMode().addAssemblerError(line-1, html);
+                showAlert(html);
+                setStatusBarMessage('Assembler error');
             }
-            else if (code == 1) {
-                if (stderror.length > 0){
-                    let lines = stderror.split('\n');
-                    if (debug) console.log(lines[0]);
-                    let match = /([^:]+):(\d+):(\d+):( error: )(.*)/.exec(lines[0].replace(/(\r\n|\n|\r)/gm,''));
-                    if (match) {
-                        let file = match[1];
-                        let line = match[2];
-                        let col = match[3];
-                        let errordesc =
-                            match[5].trimRight() + '\n' +
-                            lines[1].replace(/(\r\n|\n|\r)/gm,'').trimRight() + '\n' +
-                            lines[2].replace(/(\r\n|\n|\r)/gm,'').trimRight();
-                        editor.scrollIntoView({line:line,ch:col});
-                        editor.getMode().addAssemblerError(line-1,errordesc);
-                        let asmlines = errordesc.split('\n');
-                        let htmlmsg =
-                            asmlines[0] +
-                            '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[1].replace(/ /g,'&nbsp;') +
-                            '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[2].replace(/ /g,'&nbsp;');
-                        showAlert('Assembler error (line ' + line + ', col ' + col + '):<br>' + htmlmsg);
-                        setStatusBarMessage('Build failed.');
-                        if (debug) console.log(match);
-                    }
-                    else {
-                        showAlert('Assembler error: ' + stderror);
-                        setStatusBarMessage('Build failed.');
-                    }
-                }
-            }
-            else {
-                showAlert('Assembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
-                setStatusBarMessage('Build failed.');
-            }
+        }
 
-            if (debug) console.log(`child process exited with code ${code}`);
-        });
+        if (!hadError) {
+            showAlert(`${assembled.length} files assembled successfully.`);
+        }
     }
 
     function clearErrorGutterOnEmptyLines() {
@@ -880,7 +790,7 @@
 
     if (argFile) openFile(argFile);
 
-    if (remote.getGlobal('isMainWindow')(remote.getCurrentWindow())) checkForUpdates(true);
+    // if (remote.getGlobal('isMainWindow')(remote.getCurrentWindow())) checkForUpdates(true);
 
 </script>
 </html>

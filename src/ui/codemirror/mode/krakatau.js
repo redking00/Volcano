@@ -668,12 +668,10 @@
                 maxWidth = Math.max(maxWidth,msgs[n].length);
             }
             if (asmLineErrors[line]) {
-                let asmlines = asmLineErrors[line].split('\n');
-                let html = asmlines[0] +
-                    '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[1].replace(/ /g,'&nbsp;') +
-                    '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[2].replace(/ /g,'&nbsp;');
+                const html = asmLineErrors[line];
                 msgs.push(((msgs.length > 0)? ('[' + (msgs.length+1) + ']: '):'') + html);
-                asmlines.forEach((l)=> {
+                // asmlines.forEach((l)=> {
+                html.split('\n').forEach((l)=> {
                     maxWidth = Math.max(maxWidth,l.length);
                 });
             }

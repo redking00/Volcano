@@ -1,8 +1,0 @@
-{
-  "name": "volcano",
-  "version": "1.1.4.9",
-  "description": "A GUI for Krakatau assembler/disassembler",
-  "main": "main.js",
-  "author": "Diego Vigorra",
-  "license": "GPLv3"
-}

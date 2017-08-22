@@ -1,0 +1,68 @@
+{
+  "name": "volcano",
+  "productName": "volcano",
+  "version": "2.0.0",
+  "description": "A GUI for Krakatau assembler/disassembler",
+  "main": "src/main.js",
+  "author": "Diego Vigorra, Robert Grosse",
+  "license": "GPL-3.0+",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "lint": "eslint src"
+  },
+  "keywords": [],
+  "config": {
+    "forge": {
+      "make_targets": {
+        "win32": [
+          "squirrel"
+        ],
+        "darwin": [
+          "zip"
+        ],
+        "linux": [
+          "deb",
+          "rpm"
+        ]
+      },
+      "electronPackagerConfig": {
+        "packageManager": "npm"
+      },
+      "electronWinstallerConfig": {
+        "name": "volcano"
+      },
+      "electronInstallerDebian": {},
+      "electronInstallerRedhat": {},
+      "github_repository": {
+        "owner": "",
+        "name": ""
+      },
+      "windowsStoreConfig": {
+        "packageName": "",
+        "name": "volcano"
+      }
+    }
+  },
+  "dependencies": {
+    "big-integer": "^1.6.24",
+    "electron-compile": "^6.4.1",
+    "escape-html": "^1.0.3",
+    "math-float32-from-word": "^1.0.0",
+    "math-float32-to-word": "^1.0.0",
+    "math-float64-from-words": "^1.0.0",
+    "math-float64-to-words": "^1.0.0"
+  },
+  "devDependencies": {
+    "babel-plugin-transform-async-to-generator": "^6.24.1",
+    "babel-preset-env": "^1.6.0",
+    "babel-preset-react": "^6.24.1",
+    "electron-prebuilt-compile": "1.7.5",
+    "eslint": "^3.19.0",
+    "eslint-config-airbnb": "^15.1.0",
+    "eslint-plugin-import": "^2.7.0",
+    "eslint-plugin-jsx-a11y": "^5.1.1",
+    "eslint-plugin-react": "^7.2.1"
+  }
+}
