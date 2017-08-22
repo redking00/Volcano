@@ -434,7 +434,7 @@
             }
             showYesNoCancelDialog(
                 'This file has to be disassembled, do you want to use roundtrip mode? <br>' +
-                '<span style="font-size:10px">(Roundtrip mode creates assembly files that can roundtrip to original binary)</span>',
+                '<span style="font-size:10px">Roundtrip mode creates assembly files that are guaranteed to reassemble into the original binary, at the expense of being harder to read and edit.</span>',
                 ()=>{ doDisAsm(true); },
                 ()=>{ doDisAsm(false); },
             );
