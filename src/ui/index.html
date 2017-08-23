@@ -49,6 +49,8 @@
 
     const {Menu, dialog, process} = remote;
 
+    const system = process.platform + '-' + process.arch;
+
     const fs = remote.require('fs');
 
     const path = remote.require('path');
@@ -281,7 +283,7 @@
 
     const findReplacePanel = new FindReplacePanel(editor);
 
-    const updateURL = 'https://github.com/redking00/Volcano/raw/master/updates/';
+    const updateURL = 'https://github.com/redking00/Volcano/raw/master/updates/' + system + '/';
 
     function formatVersion(rolling) {
         let rollingStr = ''+rolling;
