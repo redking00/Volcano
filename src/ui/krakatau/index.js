@@ -15,12 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Krakatau. If not, see <http://www.gnu.org/licenses/>.
 
-'use strict'
+'use strict';
 
-const {Reader} = require('./classfileformat/reader')
-const {ClassData} = require('./classfileformat/classdata')
-const {Disassembler} = require('./assembler/disassembly')
-const parse = require('./assembler/parse')
+const {Reader} = require('./classfileformat/reader');
+const {ClassData} = require('./classfileformat/classdata');
+const {Disassembler} = require('./assembler/disassembly');
+const parse = require('./assembler/parse');
 
 function disassemble(data, roundtrip) {
     const clsdata = new ClassData(new Reader(data))
@@ -30,12 +30,12 @@ function disassemble(data, roundtrip) {
 
     let result = '';
     new Disassembler(clsdata, s => {result += s}, roundtrip).disassemble()
-    return { name: clsname, data: result };
+    return { name: clsname, data: result }
 }
 
 function assemble(source) {
-    source = source.replace('\t', ' ') + '\n'
-    return [...parse.assemble(source)]
+    source = source.replace('\t', ' ').replace(/\r\n/g,'\n') + '\n';
+    return [...parse.assemble(source)];
 }
 
-module.exports = {assemble, disassemble}
+module.exports = {assemble, disassemble};

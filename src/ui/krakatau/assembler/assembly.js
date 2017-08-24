@@ -18,6 +18,7 @@
 'use strict'
 const {Pool, utf} = require('./pool')
 const {Writer, Label} = require('../classfileformat/writer')
+const mutf8 = require('../classfileformat/mutf8');
 
 function writeU16Count(data, error, objects, message) {
     const count = objects.length
@@ -294,7 +295,7 @@ class Class {
         if (name === null) {
             error('Invalid reference for class name.', this.this.tok)
         }
-        return {name, data: data.toBytes()}
+        return {name:mutf8.decode(name), data: data.toBytes()}
     }
 }
 

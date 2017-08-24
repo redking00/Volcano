@@ -26,8 +26,19 @@
     <div id="editor"></div>
     <div id="statusbar">
         <table>
-            <tr><td id="message">Welcome to Volcano!</td><td id="textpos"></td></tr>
+            <tr>
+                <td id="showlog" onclick = 'toggleLog()' title="Show log">
+                    <i id="showLogIcon" class="fa fa-arrow-circle-o-up"></i>
+                </td>
+                <td id="message">Welcome to Volcano!</td>
+                <td id="textpos"></td>
+            </tr>
         </table>
+    </div>
+    <div id="log">
+        <div id="logButtons">
+            <input id="clearLogCmd" type="button" class="button" value="Clear" onclick = 'clearLog()'>
+        </div>
     </div>
 </body>
 
@@ -40,6 +51,8 @@
     let changeTimer;
     let messageElement = document.querySelector('#message');
     let textposElement = document.querySelector('#textpos');
+    let logElement = document.querySelector('#log');
+    let showLogIconElement = document.querySelector('#showLogIcon');
 
     const vex = require('./vex/js/vex.combined.min.js');
 
@@ -58,8 +71,6 @@
     const https = remote.require('https');
 
     const escapeHTML = require('./escape-html');
-
-    const krakatau = require('./krakatau');
 
     const menu = Menu.buildFromTemplate([
         {
@@ -231,7 +242,7 @@
                             'https://github.com/redking00/Volcano<br><br><hr>' +
                             'Krakatau Bytecode Tools by Robert Grosse<br>' +
                             'Copyright (C) 2012-17<br>'+
-                            'https://github.com/Storyyeller/Krakatau<br><br><hr>' +
+                            'https://github.com/Storyyeller/krakatau-js<br><br><hr>' +
                             'These programs are provided as open source under the GNU General Public License.<br>' +
                             'Visit https://www.gnu.org/licenses/gpl-3.0.txt for more details'
                         );
@@ -312,8 +323,21 @@
         let timeStr =
             ("0" + time.getHours()).slice(-2)   + ":" +
             ("0" + time.getMinutes()).slice(-2) + ":" +
-            ("0" + time.getSeconds()).slice(-2);
+            ("0" + time.getSeconds()).slice(-2) + "." +
+            ("00" + time.getMilliseconds()).slice(-3);
         messageElement.innerText = timeStr + ' > ' + msg;
+        addLogEntry(msg);
+
+    }
+
+    function addLogEntry(msg) {
+        let time = new Date();
+        let timeStr =
+            ("0" + time.getHours()).slice(-2)   + ":" +
+            ("0" + time.getMinutes()).slice(-2) + ":" +
+            ("0" + time.getSeconds()).slice(-2) + "." +
+            ("00" + time.getMilliseconds()).slice(-3);
+        logElement.innerHTML = '<pre><h1>' + timeStr + '</h1>    ' + msg + '</pre>' + logElement.innerHTML;
     }
 
     function updateTitle() {
@@ -542,7 +566,7 @@
                 editor.getMode().init();
             }
             else {
-                showAlert(filePath + ' does not exist')
+                showAlert(filePath + ' does not exist');
                 if (debug) console.log('File [' + filePath + '] does not exist');
             }
         }
@@ -578,51 +602,67 @@
     function disassemble(inputFile, outputDir, roundtrip) {
         setStatusBarMessage('Disassembling...');
         try {
-            const data = fs.readFileSync(inputFile);
-            const result = krakatau.disassemble(data, roundtrip);
-            // TODO - handle weird filenames
-            const clsName = result.name || ('no_class_name_' + new Date().getTime());
-            const outPath = path.resolve(outputDir, ...clsName.split('/')) + '.j';
-            fs.writeFileSync(outPath, result.data);
-            setStatusBarMessage( outPath + ' > Disassembled successfully.');
-            loadFile(outPath);
+            const disasmWorker = new Worker('workers/kworker.js');
+            disasmWorker.onmessage = (event)=> {
+                if (event.data.success){
+                    setStatusBarMessage( event.data.result + ' > Disassembled successfully.');
+                    loadFile(event.data.result);
+                }
+                else {
+                    showAlert('Disassemble error: ' + event.data.result);
+                    setStatusBarMessage('Disassemble error: ' + event.data.result);
+                    if (debug) console.log(event.data.result);
+                }
+            };
+            disasmWorker.postMessage({ op:'disassemble', inputFile:inputFile, outputDir:outputDir, roundtrip:roundtrip });
+
         } catch (e) {
             showAlert('Disassemble error: ' + e.toString());
             setStatusBarMessage('Disassemble error: ' + e.toString());
+            if (debug) console.log(e);
         }
     }
 
     function assemble(inputFile, outputDir) {
         setStatusBarMessage('Building...');
         try {
-            const source = fs.readFileSync(inputFile, {encoding: 'utf8'});
-            const assembled = krakatau.assemble(source.replace(/\r\n/g,'\n'));
-            let hadError = false;
-            for (const [success, result] of assembled) {
-                if (success) {
-                    let {name, data} = result;
-                    // TODO - handle weird filenames
-                    name = name.toString('utf8');
-                    const outPath = path.resolve(outputDir, ...name.split('/')) + '.class';
-                    fs.writeFileSync(outPath, data);
-                    setStatusBarMessage(outPath + ' > assembled.');
+            const asmWorker = new Worker('workers/kworker.js');
+            asmWorker.onmessage = (event)=>{
+                if (event.data.success) {
+                    const assembled = event.data.result;
+                    let  okCount = 0, hadError = false;
+
+                    assembled.forEach((cls)=>{
+                        if (cls.success) {
+                            okCount++;
+                            setStatusBarMessage(cls.outputFile + ' > assembled.');
+                        }
+                        else {
+                            hadError = true;
+                            const eh = escapeHTML;
+                            const {line, col, message, snippet, markers} = cls.error;
+                            let ghtml = `${eh(message)}<pre>\n${eh(snippet)}\n${eh(markers)}\n</pre>`;
+                            let html = `${line}:${col} error: ${ghtml}`;
+                            editor.scrollIntoView({line:line, ch:col});
+                            editor.getMode().addAssemblerError(line-1, ghtml);
+                            showAlert(html);
+                            setStatusBarMessage('Build failed');
+                        }
+                    });
+                    if (okCount > 0) {
+                        let msg = `${okCount} classes assembled successfully`;
+                        if (hadError) msg += ', but file contains errors';
+                        showAlert(msg);
+                    }
                 }
                 else {
-                    hadError = true;
-                    const {error, notes} = result.args;
-                    const eh = escapeHTML;
-                    const {line, col, message, snippet, markers} = result.format(error);
-                    let ghtml = `${eh(message)}<pre>\n${eh(snippet)}\n${eh(markers)}\n</pre>`;
-                    let html = `${line}:${col} error: ${ghtml}`;
-                    editor.scrollIntoView({line:line, ch:col});
-                    editor.getMode().addAssemblerError(line-1, ghtml);
-                    showAlert(html);
-                    setStatusBarMessage('Build failed');
+                    showAlert('Build failed: ' + event.data.result);
+                    setStatusBarMessage('Build failed: ' + event.data.result);
+                    if (debug) console.log(event.data.result);
                 }
-            }
-            if (!hadError) {
-                showAlert(`${assembled.length} files assembled successfully.`);
-            }
+            };
+            asmWorker.postMessage({ op:'assemble', inputFile:inputFile, outputDir:outputDir });
+
         }
         catch (e) {
             showAlert('Build failed: ' + e.toString());
@@ -633,109 +673,7 @@
 
 /*
     function assembleFolder(inputDir, outputDir) {
-        let stdoutput = '';
-        let stderror = '';
-        let lines = [];
-        let processed = [];
 
-        setStatusBarMessage('Building folder...');
-
-        const { spawn } = remote.require('child_process');
-        let params = [inputDir,'-r', '-out', outputDir];
-        const proc = spawn(kasmPath, params);
-
-        proc.stdout.on('data', (data) => {
-            stdoutput += data;
-            let templines = stdoutput.split('\n');
-            if (templines.length > 1) {
-                for (let n = 0; n < templines.length - 1; ++n) {
-                    lines.push(templines[n]);
-                    if (templines[n].startsWith('Processing file ')){
-                        let match = /(Processing file )([^,]+)(, )(\d+)(\/)(\d+)( remaining)/.exec(templines[n]);
-                        if (match) {
-                            let msg = 'Processing file ' + (match[6]-match[4]+1) + ' of ' + match[6] + ' > ' + match[2];
-                            processed.push(match[2]);
-                            setStatusBarMessage(msg);
-                            if (debug) console.log(msg);
-                        }
-                    }
-                }
-                stdoutput = templines[templines.length-1];
-            }
-            if (debug) console.log(`stdout: ${data}`);
-        });
-
-        proc.stderr.on('data', (data) => {
-            stderror += data;
-            if (debug) console.log(`stderr: ${data}`);
-        });
-
-        proc.on('close', (code) => {
-            let templines = stdoutput.split('\n');
-            if (templines.length > 0) {
-                for (let n = 0; n < templines.length; ++n) {
-                    lines.push(templines[n]);
-                    if (templines[n].startsWith('Processing file ')){
-                        let match = /(Processing file )([^,]+)(, )(\d+)(\/)(\d+)( remaining)/.exec(templines[n]);
-                        if (match) {
-                            let msg = 'Processing file ' + (match[6]-match[4]+1) + ' of ' + match[6] + ' > ' + match[2];
-                            processed.push(match[2]);
-                            setStatusBarMessage(msg);
-                            if (debug) console.log(msg);
-                        }
-                    }
-                }
-            }
-
-            if (debug) console.log(processed);
-
-            if (code == 0) {
-                showAlert('Done.','300px');
-                setStatusBarMessage(inputDir + ' > assembled.');
-            }
-            else if (code == 1) {
-                if (stderror.length > 0){
-                    let lines = stderror.split('\n');
-                    if (debug) console.log(lines[0]);
-                    let match = /([^:]+):(\d+):(\d+):( error: )(.*)/.exec(lines[0].replace(/(\r\n|\n|\r)/gm,''));
-                    if (match) {
-                        if (debug) console.log(match);
-                        let file = match[1];
-                        let line = match[2];
-                        let col = match[3];
-                        let errordesc =
-                            match[5].trimRight() + '\n' +
-                            lines[1].replace(/(\r\n|\n|\r)/gm,'').trimRight() + '\n' +
-                            lines[2].replace(/(\r\n|\n|\r)/gm,'').trimRight();
-                        let asmlines = errordesc.split('\n');
-                        let htmlmsg =
-                            asmlines[0] +
-                            '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[1].replace(/ /g,'&nbsp;') +
-                            '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + asmlines[2].replace(/ /g,'&nbsp;');
-
-
-                        if (processed[processed.length-1] === currentFilePath) {
-                            editor.scrollIntoView({line:line,ch:col});
-                            editor.getMode().addAssemblerError(line-1,errordesc);
-                            showAlert('Assembler error (line ' + line + ', col ' + col + '):<br>' + htmlmsg);
-                            setStatusBarMessage('Build failed.');
-                        }
-                        else {
-                            showAlert('Assembler error on file<br>' + processed[processed.length-1] + '<br>(line ' + line + ', col ' + col + '):<br>' + htmlmsg,'80%');
-                            setStatusBarMessage('Build failed.');
-                        }
-                    }
-                    else {
-                        showAlert('Assembler error: ' + stderror);
-                        setStatusBarMessage('Build failed.');
-                    }
-                }
-            }
-            else showAlert('Assembler error stdout:['+stdoutput+'] stderr:['+stderror+']');
-
-            if (debug) console.log(`child process exited with code ${code}`);
-
-        });
     }
 */
 
@@ -900,6 +838,24 @@
             }
         );
     }
+
+    function toggleLog() {
+        if (logElement.style.display !== 'block') {
+            logElement.style.display = 'block';
+            showLogIconElement.classList.remove('fa-arrow-circle-o-up');
+            showLogIconElement.classList.add('fa-arrow-circle-o-down');
+        }
+        else {
+            logElement.style.display = 'none';
+            showLogIconElement.classList.remove('fa-arrow-circle-o-down');
+            showLogIconElement.classList.add('fa-arrow-circle-o-up');
+        }
+    }
+
+    function clearLog() {
+        logElement.querySelectorAll('pre').forEach(el=>{el.remove()});
+    }
+
 
     window.onbeforeunload = onCloseQuery;
 

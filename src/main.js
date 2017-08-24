@@ -67,7 +67,10 @@ function createMainWindow(argFile) {
         fullscreen: false,
         fullscreenable: true,
         backgroundColor: '#000',
-        show: false
+        show: false,
+        webPreferences: {
+            nodeIntegrationInWorker: true
+        }
     });
 
     if (debug) win.webContents.openDevTools({detach:true});

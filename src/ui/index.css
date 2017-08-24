@@ -20,7 +20,7 @@ body {
 }
 
 body {
-/*    font-family: -apple-system, 'Helvetica Neue', Helvetica, sans-serif;*/
+    /*    font-family: -apple-system, 'Helvetica Neue', Helvetica, sans-serif;*/
     font-family: sourcecodepro;
     font-size: 12px;
 }
@@ -69,6 +69,14 @@ pre {
     color: white;
     table-layout:fixed;
 }
+
+#showlog {
+    width: 20px;
+    padding-left:5px;
+    font-size:15px;
+    cursor:pointer;
+}
+
 #message {
     padding: 0px 5px 0px 5px;
     overflow: hidden;
@@ -84,6 +92,67 @@ pre {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+}
+
+#log {
+    display:none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    cursor: default;
+    position: absolute;
+    margin: 0px;
+    width: 100%;
+    height: 50%;
+    left: 0px;
+    bottom: 25px;
+    background-color: rgba(35, 35, 35, 0.95);
+    z-index: 100;
+    color: #a4c5ff;
+    box-sizing: border-box;
+    font-size: 10px;
+    overflow: auto;
+    border: 1px solid #525252;;
+    padding: 20px 5px 5px 5px;
+}
+
+#log > pre {
+    white-space:normal;
+    margin:4px;
+}
+
+#log > pre > h1 {
+    font-size: 10px;
+    display:inline;
+    font-weight: normal;
+    color: #00fdff;
+}
+
+#logButtons {
+    position: absolute;
+    top:0px;
+    left:0px;
+    width:100%;
+    height: 20px;
+    box-sizing:border-box;
+    margin:0px;
+    padding-left:10px;
+}
+
+#logButtons > .button {
+    background-color: cornflowerblue;
+    color:white;
+    border: none;
+    font-family: sourcecodeprobold;
+    font-size:10px;
+    margin: 5px 0px 5px 0px;
+    cursor: pointer;
+    border-radius: 4px;
+    min-width:50px;
+    outline:none;
+}
+
+#clearLogCmd:hover {
+    background-color: #ff4949
 }
 
 
