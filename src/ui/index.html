@@ -27,8 +27,8 @@
     <div id="statusbar">
         <table>
             <tr>
-                <td id="showlog" onclick = 'toggleLog()' title="Show log">
-                    <i id="showLogIcon" class="fa fa-arrow-circle-o-up"></i>
+                <td id="showlog">
+                    <i id="showLogIcon" onclick = 'toggleLog()' title="Show log" class="fa fa-arrow-circle-o-up"></i>
                 </td>
                 <td id="message">Welcome to Volcano!</td>
                 <td id="textpos"></td>
@@ -486,7 +486,7 @@
         if (fileName.toLowerCase().endsWith(".class")
 //            || fileName.toLowerCase().endsWith(".jar")
         ) {
-            function doDisAsm(roundtrip) {
+            function doDisAsm(roundtrip,overwrite) {
                 dialog.showOpenDialog(
                     remote.getCurrentWindow(),
                     {
@@ -495,16 +495,26 @@
                     },
                     function (folderNames) {
                         if (folderNames) {
-                            disassemble(fileName, folderNames[0], roundtrip);
+                            disassemble(fileName, folderNames[0], roundtrip, overwrite);
                         }
                     }
                 );
             }
+
+            function askOverwrite(roundtrip) {
+                showYesNoCancelDialog(
+                    'Do you want to overwrite the output files?<br>' +
+                    '<span style="font-size:10px">If not, a timestamp suffix will be appended to filename when necessary.</span>',
+                    ()=>{ doDisAsm(roundtrip,true); },
+                    ()=>{ doDisAsm(roundtrip,false); },
+                );
+            }
+
             showYesNoCancelDialog(
                 'This file has to be disassembled, do you want to use roundtrip mode? <br>' +
                 '<span style="font-size:10px">Roundtrip mode creates assembly files that are guaranteed to reassemble into the original binary, at the expense of being harder to read and edit.</span>',
-                ()=>{ doDisAsm(true); },
-                ()=>{ doDisAsm(false); },
+                ()=>{ askOverwrite(true); },
+                ()=>{ askOverwrite(false); },
             );
         }
         else if (fileName.toLowerCase().endsWith(".j")) {
@@ -560,7 +570,7 @@
                 currentFilePath = filePath;
                 currentOutputPath = undefined;
                 clearDirty();
-                setStatusBarMessage(filePath +' > loaded.');
+                setStatusBarMessage(filePath +' > Loaded.');
                 updateTitle();
                 onCursorActivity();
                 editor.getMode().init();
@@ -590,7 +600,7 @@
             });
             currentFilePath = filePath;
             clearDirty();
-            setStatusBarMessage(currentFilePath + ' > saved.');
+            setStatusBarMessage(currentFilePath + ' > Saved.');
             updateTitle();
         }
         catch(err) {
@@ -599,8 +609,8 @@
         }
     }
 
-    function disassemble(inputFile, outputDir, roundtrip) {
-        setStatusBarMessage('Disassembling...');
+    function disassemble(inputFile, outputDir, roundtrip, overwrite) {
+        setStatusBarMessage(`${inputFile} > Disassembling`);
         try {
             const disasmWorker = new Worker('workers/kworker.js');
             disasmWorker.onmessage = (event)=> {
@@ -614,7 +624,7 @@
                     if (debug) console.log(event.data.result);
                 }
             };
-            disasmWorker.postMessage({ op:'disassemble', inputFile:inputFile, outputDir:outputDir, roundtrip:roundtrip });
+            disasmWorker.postMessage({ op:'disassemble', inputFile:inputFile, outputDir:outputDir, roundtrip:roundtrip, overwrite:overwrite });
 
         } catch (e) {
             showAlert('Disassemble error: ' + e.toString());
@@ -624,7 +634,7 @@
     }
 
     function assemble(inputFile, outputDir) {
-        setStatusBarMessage('Building...');
+        setStatusBarMessage(`${inputFile} > Building`);
         try {
             const asmWorker = new Worker('workers/kworker.js');
             asmWorker.onmessage = (event)=>{
@@ -844,16 +854,19 @@
             logElement.style.display = 'block';
             showLogIconElement.classList.remove('fa-arrow-circle-o-up');
             showLogIconElement.classList.add('fa-arrow-circle-o-down');
+            showLogIconElement.title = 'Hide log';
         }
         else {
             logElement.style.display = 'none';
             showLogIconElement.classList.remove('fa-arrow-circle-o-down');
             showLogIconElement.classList.add('fa-arrow-circle-o-up');
+            showLogIconElement.title = 'Show log';
         }
     }
 
     function clearLog() {
         logElement.querySelectorAll('pre').forEach(el=>{el.remove()});
+        toggleLog();
     }
 
 
