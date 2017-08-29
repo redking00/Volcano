@@ -1,6 +1,6 @@
 'use strict';
 
-let debug = false;
+const debug = false;
 
 const electron = require('electron');
 
@@ -24,7 +24,7 @@ if (process.argv.length > 1){
     for (let n = 1 ; n < process.argv.length; ++n) {
         if (process.argv[n].toLowerCase().endsWith('.j')) argFiles.push(process.argv[n]);
         else if (process.argv[n].toLowerCase().endsWith('.class')) argFiles.push(process.argv[n]);
-//        else if (process.argv[n].toLowerCase().endsWith('.jar')) argFiles.push(process.argv[n]);
+        else if (process.argv[n].toLowerCase().endsWith('.jar')) argFiles.push(process.argv[n]);
     }
 }
 
@@ -34,7 +34,7 @@ let shouldQuit = app.makeSingleInstance(function(commandLine, workingDirectory) 
         for (let n = 1 ; n < commandLine.length; ++n) {
             if (commandLine[n].toLowerCase().endsWith('.j')) newArgFiles.push(commandLine[n]);
             else if (commandLine[n].toLowerCase().endsWith('.class')) newArgFiles.push(commandLine[n]);
-//            else if (commandLine[n].toLowerCase().endsWith('.jar')) newArgFiles.push(commandLine[n]);
+            else if (commandLine[n].toLowerCase().endsWith('.jar')) newArgFiles.push(commandLine[n]);
         }
     }
     if (newArgFiles.length>0){
@@ -155,27 +155,22 @@ function updatePackages(callback) {
                                             if (debug) console.log('FILENAME:' + filename);
                                             let dest = path.resolve(resourceFolder, filename);
                                             let folder = path.dirname(dest);
-                                            if (fs.existsSync(folder)) {
-                                                if (fs.existsSync(dest)) {
-                                                    fs.truncateSync(dest, 0);
-                                                }
-                                            }
-                                            else try {
-                                                mkdirP.sync(folder);
-                                            } catch (err) {
-                                                if (debug) console.log(err);
-                                            }
+                                            if (!fs.existsSync(folder)) mkdirP.sync(folder);
                                             fs.writeFileSync(dest, content);
                                             resolve();
                                         }).catch((err) => {
                                             if (debug) console.log(err);
-                                            reject();
+                                            reject(err);
                                         });
                                     }));
                                 }
                             });
                             Promise.all(extractTasks).then(() => {
                                 if (debug) console.log('All extracted');
+                                fs.unlink(file.path, (err) => {});
+                                extractPatch( npatch + 1);
+                            }).catch((err) => {
+                                if (debug) console.log(err);
                                 fs.unlink(file.path, (err) => {});
                                 extractPatch( npatch + 1);
                             });

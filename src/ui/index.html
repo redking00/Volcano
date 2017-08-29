@@ -39,12 +39,13 @@
         <div id="logButtons">
             <input id="clearLogCmd" type="button" class="button" value="Clear" onclick = 'clearLog()'>
         </div>
+        <div id="logContent"></div>
     </div>
 </body>
 
 <script>
-    let rolling = 1200;
-    let debug = false;
+    const rolling = 1200;
+    const debug = false;
     let currentFilePath;
     let currentOutputPath;
     let dirty = false;
@@ -52,6 +53,7 @@
     let messageElement = document.querySelector('#message');
     let textposElement = document.querySelector('#textpos');
     let logElement = document.querySelector('#log');
+    let logContentElement = logElement.querySelector('#logContent');
     let showLogIconElement = document.querySelector('#showLogIcon');
 
     const vex = require('./vex/js/vex.combined.min.js');
@@ -82,12 +84,14 @@
                 {label: 'New window', accelerator: process.platform === 'darwin' ? 'Alt+Cmd+N' : 'Ctrl+Shift+N', click() {
                     remote.getGlobal('openFile')();
                 }},
+                {type: 'separator'},
                 {label: 'Open file', accelerator: 'CmdOrCtrl+O', click(){
                     showLoadFileDialog(false);
                 }},
                 {label: 'Open file (New window)', accelerator: process.platform === 'darwin' ? 'Alt+Cmd+O' : 'Ctrl+Shift+O', click() {
                     showLoadFileDialog(true);
                 }},
+                {type: 'separator'},
                 {label: 'Save file', accelerator: 'CmdOrCtrl+S', click(){
                     if (currentFilePath) {
                         saveFile(currentFilePath);
@@ -97,6 +101,11 @@
                 {label: 'Save file as...', accelerator: process.platform === 'darwin' ? 'Alt+Cmd+S' : 'Ctrl+Shift+S', click(){
                     showSaveFileDialog();
                 }},
+                {type: 'separator'},
+                {label: 'Disassemble folder', accelerator: 'CmdOrCtrl+G', click() { showDisassembleFolderDialog(false); }},
+                {label: 'Disassemble folder recursively',accelerator: process.platform === 'darwin' ? 'Alt+Cmd+G' : 'Ctrl+Shift+G', click() { showDisassembleFolderDialog(true); }},
+                {type: 'separator'},
+                {label: 'Extract JAR', accelerator: process.platform === 'darwin' ? 'Alt+Cmd+E' : 'Ctrl+Shift+E', click(){ showExtractFileDialog(); }},
                 {type: 'separator'},
                 {label: 'Close', role: 'close'}
             ]
@@ -135,7 +144,7 @@
                                 dialog.showOpenDialog(
                                     remote.getCurrentWindow(),
                                     {
-                                        title: 'Select assembler output folder',
+                                        title: 'Select assembler output folder (class files may be overwritten)',
                                         properties: ['openDirectory', 'createDirectory']
                                     },
                                     function (folderNames) {
@@ -160,7 +169,7 @@
                             dialog.showOpenDialog(
                                 remote.getCurrentWindow(),
                                 {
-                                    title: 'Select assembler output folder',
+                                    title: 'Select assembler output folder (class files may be overwritten)',
                                     properties: ['openDirectory', 'createDirectory']
                                 },
                                 function (folderNames) {
@@ -178,45 +187,16 @@
                         else showSaveFileDialog(()=>{ if (currentFilePath) doAsmTo(); });
                     }
                 },
-/*
                 {
-                    label: 'Assemble entire folder', accelerator: 'F7', click(){
-                        function doAsmFolderFromTo() {
-                            dialog.showOpenDialog(
-                                remote.getCurrentWindow(),
-                                {
-                                    title: 'Select folder to assemble',
-                                    properties: ['openDirectory']
-                                },
-                                function (inputFolderNames) {
-                                    if (inputFolderNames) {
-                                        dialog.showOpenDialog(
-                                            remote.getCurrentWindow(),
-                                            {
-                                                title: 'Select assembler output folder',
-                                                properties: ['openDirectory','createDirectory']
-                                            },
-                                            function (outputFolderNames) {
-                                                if (outputFolderNames) {
-                                                    assembleFolder(inputFolderNames[0], outputFolderNames[0]);
-                                                }
-                                            }
-                                        );
-                                    }
-                                }
-                            );
-                        }
-                        if (dirty) {
-                            if (currentFilePath) {
-                                saveFile(currentFilePath);
-                                doAsmFolderFromTo();
-                            }
-                            else showSaveFileDialog(()=>{ if (currentFilePath) doAsmFolderFromTo(); });
-                        }
-                        else doAsmFolderFromTo();
-                    }
+                    label: 'Assemble folder', accelerator: 'F7', click(){
+                        showAssembleFolderDialog(false);
+                    },
                 },
-*/
+                {
+                    label: 'Assemble folder recursively', accelerator: 'F8', click(){
+                        showAssembleFolderDialog(true);
+                    },
+                },
             ]
         },
         {
@@ -296,6 +276,8 @@
 
     const updateURL = 'https://github.com/redking00/Volcano/raw/master/updates/' + system + '/';
 
+    const workers = [];
+
     function formatVersion(rolling) {
         let rollingStr = ''+rolling;
         let min = rollingStr.slice(-3);
@@ -307,7 +289,7 @@
         if (!dirty) {
             dirty = true;
             updateTitle();
-            setStatusBarMessage(((currentFilePath)? currentFilePath:'Untitled.j') +' > modified.');
+            setStatusBarMessage(((currentFilePath)? currentFilePath:'Untitled.j') +' > Modified');
             editor.getMode().clearAsmErrors();
         }
     }
@@ -318,7 +300,7 @@
         editor.getMode().clearAsmErrors();
     }
 
-    function setStatusBarMessage(msg) {
+    function setStatusBarMessage(msg, isError) {
         let time = new Date();
         let timeStr =
             ("0" + time.getHours()).slice(-2)   + ":" +
@@ -326,18 +308,21 @@
             ("0" + time.getSeconds()).slice(-2) + "." +
             ("00" + time.getMilliseconds()).slice(-3);
         messageElement.innerText = timeStr + ' > ' + msg;
-        addLogEntry(msg);
+        addLogEntry(msg, isError);
 
     }
 
-    function addLogEntry(msg) {
+    function addLogEntry(msg, isError) {
         let time = new Date();
         let timeStr =
             ("0" + time.getHours()).slice(-2)   + ":" +
             ("0" + time.getMinutes()).slice(-2) + ":" +
             ("0" + time.getSeconds()).slice(-2) + "." +
             ("00" + time.getMilliseconds()).slice(-3);
-        logElement.innerHTML = '<pre><h1>' + timeStr + '</h1>    ' + msg + '</pre>' + logElement.innerHTML;
+        let entry = document.createElement('pre');
+        entry.innerHTML = `<h1>${timeStr}</h1> ${msg}`;
+        if (isError) entry.classList.add('logError');
+        logContentElement.insertBefore(entry,logContentElement.childNodes[0]);
     }
 
     function updateTitle() {
@@ -356,6 +341,23 @@
         if (width) {
             dlg.rootEl.querySelector('.vex-content').style.width = width;
         }
+    }
+
+    function showFileErrorAlert(msg,file) {
+        let dlg = vex.dialog.confirm({
+            unsafeMessage: msg,
+            callback: ()=> {},
+            buttons: [
+                extend(vex.dialog.buttons.NO,{ text: 'Ok', click: function() {
+                    vex.close(this.id.toString());
+                }}),
+                extend(vex.dialog.buttons.YES,{ text: 'Open file', click: function() {
+                    remote.getGlobal('openFile')(file);
+                    vex.close(this.id.toString());
+                }}),
+            ]
+        });
+        dlg.rootEl.querySelector('.vex-dialog-button-primary').focus();
     }
 
     function showYesNoCancelDialog(msg,yes,no,cancel) {
@@ -417,11 +419,10 @@
                 remote.getCurrentWindow(),
                 {
                     filters: [
-//                        { extensions: ['j','class','jar'],  name:'All supported formats'},
-                        { extensions: ['j','class'],  name:'All supported formats'},
+                        { extensions: ['j','class','jar'],  name:'All supported formats'},
                         { extensions: ['j'],        name:'Krakatau source'},
                         { extensions: ['class'],    name:'Java class'},
-//                        { extensions: ['jar'],      name:'Java jar'}
+                        { extensions: ['jar'],      name:'Java jar'}
                     ],
                     properties:['multiSelections']
                 },
@@ -482,10 +483,122 @@
         );
     }
 
+    function showExtractFileDialog(callback) {
+        dialog.showOpenDialog(
+            remote.getCurrentWindow(),
+            {
+                filters: [
+                    { extensions: ['jar'],      name:'Java jar'}
+                ]
+            },
+            function (fileNames) {
+                if (fileNames) {
+                    dialog.showOpenDialog(
+                        remote.getCurrentWindow(),
+                        {
+                            title: 'Select output folder (files may be overwritten)',
+                            properties: ['openDirectory', 'createDirectory']
+                        },
+                        function (folderNames) {
+                            if (folderNames) unjar(fileNames[0], folderNames[0], callback);
+                        }
+                    );
+                }
+            }
+        );
+    }
+
+    function showAssembleFolderDialog(recursive, callback) {
+        function doAsmFolderFromTo() {
+            dialog.showOpenDialog(
+                remote.getCurrentWindow(),
+                {
+                    title: 'Select folder to assemble' + (recursive? ' recursively':''),
+                    properties: ['openDirectory']
+                },
+                function (inputFolderNames) {
+                    if (inputFolderNames) {
+                        dialog.showOpenDialog(
+                            remote.getCurrentWindow(),
+                            {
+                                title: 'Select assembler output folder (class files may be overwritten)',
+                                properties: ['openDirectory','createDirectory']
+                            },
+                            function (outputFolderNames) {
+                                if (outputFolderNames) {
+                                    assembleFolder(inputFolderNames[0], outputFolderNames[0], recursive);
+                                    if (callback) callback();
+                                }
+                            }
+                        );
+                    }
+                }
+            );
+        }
+        if (dirty) {
+            if (currentFilePath) {
+                saveFile(currentFilePath);
+                doAsmFolderFromTo();
+            }
+            else showSaveFileDialog(()=>{ if (currentFilePath) doAsmFolderFromTo(); });
+        }
+        else doAsmFolderFromTo();
+
+    }
+
+    function showDisassembleFolderDialog(recursive, callback) {
+        function doDisAsm(inputDir,roundtrip,overwrite) {
+            dialog.showOpenDialog(
+                remote.getCurrentWindow(),
+                {
+                    title: 'Select disassembler output folder',
+                    properties: ['openDirectory', 'createDirectory']
+                },
+                function (folderNames) {
+                    if (folderNames) {
+                        disassembleFolder(inputDir, folderNames[0], roundtrip, overwrite, recursive);
+                        if (callback) callback();
+                    }
+                }
+            );
+        }
+
+        function askOverwrite(inputDir,roundtrip) {
+            showYesNoCancelDialog(
+                'Do you want to overwrite files in the output folder?<br>' +
+                '<span style="font-size:10px">If not, a timestamp suffix will be appended to filenames when necessary.</span>',
+                ()=>{ doDisAsm(inputDir, roundtrip, true); },
+                ()=>{ doDisAsm(inputDir, roundtrip, false); },
+            );
+        }
+
+
+        dialog.showOpenDialog(
+            remote.getCurrentWindow(),
+            {
+                title: 'Select disassembler input folder',
+                properties: ['openDirectory']
+            },
+            function (folderNames) {
+                if (folderNames) {
+                    showYesNoCancelDialog(
+                        'Do you want to use roundtrip mode? <br>' +
+                        '<span style="font-size:10px">Roundtrip mode creates assembly files that are guaranteed to reassemble into the original binary, at the expense of being harder to read and edit.</span>',
+                        ()=>{ askOverwrite(folderNames[0], true); },
+                        ()=>{ askOverwrite(folderNames[0], false); },
+                    );
+                }
+            }
+        );
+    }
+
     function openFile(fileName) {
-        if (fileName.toLowerCase().endsWith(".class")
-//            || fileName.toLowerCase().endsWith(".jar")
-        ) {
+        let fileType;
+        if (fileName.toLowerCase().endsWith(".jar")) fileType = 'JAR';
+        else if (fileName.toLowerCase().endsWith(".class")) fileType = 'CLASS';
+        else if (fileName.toLowerCase().endsWith(".j")) fileType = 'SOURCE';
+
+        if (fileType === 'CLASS' || fileType === 'JAR') {
             function doDisAsm(roundtrip,overwrite) {
                 dialog.showOpenDialog(
                     remote.getCurrentWindow(),
@@ -495,7 +608,8 @@
                     },
                     function (folderNames) {
                         if (folderNames) {
-                            disassemble(fileName, folderNames[0], roundtrip, overwrite);
+                            if (fileType === 'CLASS') disassemble(fileName, folderNames[0], roundtrip, overwrite);
+                            else disassembleJar(fileName, folderNames[0], roundtrip, overwrite);
                         }
                     }
                 );
@@ -503,8 +617,8 @@
 
             function askOverwrite(roundtrip) {
                 showYesNoCancelDialog(
-                    'Do you want to overwrite the output files?<br>' +
-                    '<span style="font-size:10px">If not, a timestamp suffix will be appended to filename when necessary.</span>',
+                    'Do you want to overwrite files in the output folder?<br>' +
+                    '<span style="font-size:10px">If not, a timestamp suffix will be appended to filenames when necessary.</span>',
                     ()=>{ doDisAsm(roundtrip,true); },
                     ()=>{ doDisAsm(roundtrip,false); },
                 );
@@ -517,7 +631,7 @@
                 ()=>{ askOverwrite(false); },
             );
         }
-        else if (fileName.toLowerCase().endsWith(".j")) {
+        else if (fileType === 'SOURCE') {
             loadFile(fileName);
         }
         else showAlert('Can not open that file');
@@ -570,7 +684,7 @@
                 currentFilePath = filePath;
                 currentOutputPath = undefined;
                 clearDirty();
-                setStatusBarMessage(filePath +' > Loaded.');
+                setStatusBarMessage(filePath +' > Loaded');
                 updateTitle();
                 onCursorActivity();
                 editor.getMode().init();
@@ -600,7 +714,7 @@
             });
             currentFilePath = filePath;
             clearDirty();
-            setStatusBarMessage(currentFilePath + ' > Saved.');
+            setStatusBarMessage(currentFilePath + ' > Saved');
             updateTitle();
         }
         catch(err) {
@@ -612,40 +726,111 @@
     function disassemble(inputFile, outputDir, roundtrip, overwrite) {
         setStatusBarMessage(`${inputFile} > Disassembling`);
         try {
-            const disasmWorker = new Worker('workers/kworker.js');
-            disasmWorker.onmessage = (event)=> {
+            const kWorker = new Worker('workers/kworker.js');
+            workers.push(kWorker);
+            kWorker.onmessage = (event)=> {
                 if (event.data.success){
-                    setStatusBarMessage( event.data.result + ' > Disassembled successfully.');
+                    setStatusBarMessage( event.data.result + ' > Disassembled successfully');
                     loadFile(event.data.result);
                 }
                 else {
-                    showAlert('Disassemble error: ' + event.data.result);
-                    setStatusBarMessage('Disassemble error: ' + event.data.result);
+                    showAlert('Disassemble failed: ' + event.data.result);
+                    setStatusBarMessage('Disassemble failed: ' + event.data.result, true);
                     if (debug) console.log(event.data.result);
                 }
+                kWorker.terminate();
+                workers.splice(workers.indexOf(kWorker),1);
             };
-            disasmWorker.postMessage({ op:'disassemble', inputFile:inputFile, outputDir:outputDir, roundtrip:roundtrip, overwrite:overwrite });
+            kWorker.postMessage({ op:'disassemble', inputFile:inputFile, outputDir:outputDir, roundtrip:roundtrip, overwrite:overwrite });
 
         } catch (e) {
-            showAlert('Disassemble error: ' + e.toString());
-            setStatusBarMessage('Disassemble error: ' + e.toString());
+            showAlert('Disassemble failed: ' + e.toString());
+            setStatusBarMessage('Disassemble failed: ' + e.toString(), true);
+            if (debug) console.log(e);
+        }
+    }
+
+    function disassembleJar(inputFile, outputDir, roundtrip, overwrite, callback) {
+        setStatusBarMessage(`${inputFile} > Processing`);
+        try {
+            const kWorker = new Worker('workers/kworker.js');
+            workers.push(kWorker);
+            kWorker.onmessage = (event)=> {
+                if (event.data.close === true) {
+                    kWorker.terminate();
+                    workers.splice(workers.indexOf(kWorker),1);
+                    if (event.data.success) {
+                        setStatusBarMessage(`${inputFile} > Processed successfully`);
+                        showAlert(`${inputFile} processed successfully`);
+                    }
+                    else {
+                        setStatusBarMessage(event.data.result, true);
+                        setStatusBarMessage(`${inputFile} > Processed with errors`, true);
+                        showAlert(`${inputFile} processed with errors`);
+                    }
+                    if (callback) callback(!event.data.success);
+                }
+                else {
+                    if (event.data.success) setStatusBarMessage(`[${event.data.processed} of ${event.data.total}] ${event.data.result} > Disassembled`);
+                    else setStatusBarMessage(event.data.result, true);
+                }
+            };
+            kWorker.postMessage({ op:'disassembleJar', inputFile:inputFile, outputDir:outputDir, roundtrip:roundtrip, overwrite:overwrite });
+        }
+        catch (e) {
+            showAlert('Disassemble failed: ' + e.toString());
+            setStatusBarMessage('Disassemble failed: ' + e.toString(), true);
+            if (debug) console.log(e);
+        }
+    }
+
+    function unjar(inputFile, outputDir, callback) {
+        setStatusBarMessage(`${inputFile} > Processing`);
+        try {
+            const kWorker = new Worker('workers/kworker.js');
+            workers.push(kWorker);
+            kWorker.onmessage = (event)=> {
+                if (event.data.close === true) {
+                    kWorker.terminate();
+                    workers.splice(workers.indexOf(kWorker),1);
+                    if (event.data.success) {
+                        setStatusBarMessage(`${inputFile} > Processed successfully`);
+                        showAlert(`${inputFile} processed successfully`);
+                    }
+                    else {
+                        setStatusBarMessage(event.data.result, true);
+                        setStatusBarMessage(`${inputFile} > Processed with errors`, true);
+                        showAlert(`${inputFile} processed with errors`);
+                    }
+                    if (callback) callback(!event.data.success);
+                }
+                else {
+                    if (event.data.success) setStatusBarMessage(`[${event.data.processed} of ${event.data.total}] ${event.data.result} > Extracted`);
+                    else setStatusBarMessage(event.data.result, true);
+                }
+            };
+            kWorker.postMessage({ op:'unjar', inputFile:inputFile, outputDir:outputDir });
+        }
+        catch (e) {
+            showAlert('Unjar failed: ' + e.toString());
+            setStatusBarMessage('Unjar failed: ' + e.toString(), true);
             if (debug) console.log(e);
         }
     }
 
     function assemble(inputFile, outputDir) {
-        setStatusBarMessage(`${inputFile} > Building`);
+        setStatusBarMessage(`${inputFile} > Processing`);
         try {
-            const asmWorker = new Worker('workers/kworker.js');
-            asmWorker.onmessage = (event)=>{
+            const kWorker = new Worker('workers/kworker.js');
+            workers.push(kWorker);
+            kWorker.onmessage = (event)=>{
                 if (event.data.success) {
                     const assembled = event.data.result;
                     let  okCount = 0, hadError = false;
-
                     assembled.forEach((cls)=>{
                         if (cls.success) {
                             okCount++;
-                            setStatusBarMessage(cls.outputFile + ' > assembled.');
+                            setStatusBarMessage(cls.outputFile + ' > Assembled');
                         }
                         else {
                             hadError = true;
@@ -656,36 +841,111 @@
                             editor.scrollIntoView({line:line, ch:col});
                             editor.getMode().addAssemblerError(line-1, ghtml);
                             showAlert(html);
-                            setStatusBarMessage('Build failed');
+                            setStatusBarMessage(html, true);
+                            setStatusBarMessage('Assemble failed', true);
                         }
                     });
                     if (okCount > 0) {
                         let msg = `${okCount} classes assembled successfully`;
                         if (hadError) msg += ', but file contains errors';
                         showAlert(msg);
+                        setStatusBarMessage(`${inputFile} > Processed, ${msg}`, hadError);
                     }
                 }
                 else {
-                    showAlert('Build failed: ' + event.data.result);
-                    setStatusBarMessage('Build failed: ' + event.data.result);
+                    showAlert('Assemble failed: ' + event.data.result);
+                    setStatusBarMessage('Assemble failed: ' + event.data.result, true);
                     if (debug) console.log(event.data.result);
                 }
+                kWorker.terminate();
+                workers.splice(workers.indexOf(kWorker),1);
             };
-            asmWorker.postMessage({ op:'assemble', inputFile:inputFile, outputDir:outputDir });
+            kWorker.postMessage({ op:'assemble', inputFile:inputFile, outputDir:outputDir });
 
         }
         catch (e) {
-            showAlert('Build failed: ' + e.toString());
-            setStatusBarMessage('Build failed: ' + e.toString());
+            showAlert('Assemble failed: ' + e.toString());
+            setStatusBarMessage('Assemble failed: ' + e.toString(), true);
             if (debug) console.log(e);
         }
     }
 
-/*
-    function assembleFolder(inputDir, outputDir) {
-
+    function assembleFolder(inputDir, outputDir, recursive) {
+        setStatusBarMessage(`${inputDir} > Processing folder`);
+        try {
+            const kWorker = new Worker('workers/kworker.js');
+            workers.push(kWorker);
+            kWorker.onmessage = (event)=> {
+                if (event.data.close === true) {
+                    kWorker.terminate();
+                    workers.splice(workers.indexOf(kWorker),1);
+                    showAlert(`${event.data.classes} classes (${event.data.total} source files) assembled successfully`);
+                    setStatusBarMessage(`${inputDir} > Folder processed succesfully (${event.data.total} source files / ${event.data.total} classes)`);
+                }
+                else if (event.data.success) {
+                    setStatusBarMessage(event.data.result + ' > Assembled');
+                }
+                else if (event.data.error) {
+                    const eh = escapeHTML;
+                    const {line, col, message, snippet, markers} = event.data.error;
+                    let errorMsg = `${event.data.result}<br>${line}:${col} error: ${eh(message)}<pre>\n${eh(snippet)}\n${eh(markers)}\n</pre>`;
+                    showFileErrorAlert(errorMsg,event.data.result);
+                    setStatusBarMessage(errorMsg, true);
+                    setStatusBarMessage(`${inputDir} > Folder not fully processed (only ${event.data.total} source files), there was errors`, true);
+                    kWorker.terminate();
+                    workers.splice(workers.indexOf(kWorker),1);
+                }
+                else {
+                    showAlert('Assemble folder failed: ' + event.data.result);
+                    setStatusBarMessage('Assemble folder failed: ' + event.data.result, true);
+                    kWorker.terminate();
+                    workers.splice(workers.indexOf(kWorker),1);
+                }
+            };
+            kWorker.postMessage({ op:'assembleFolder', inputDir:inputDir, outputDir:outputDir, recursive:recursive });
+        } catch (e) {
+            showAlert('Assemble folder failed: ' + e.toString());
+            setStatusBarMessage('Assemble folder failed: ' + e.toString(), true);
+            if (debug) console.log(e);
+        }
     }
-*/
+
+    function disassembleFolder(inputDir, outputDir, roundtrip, overwrite, recursive) {
+        setStatusBarMessage(`${inputDir} > Processing folder`);
+        try {
+            const kWorker = new Worker('workers/kworker.js');
+            workers.push(kWorker);
+            kWorker.onmessage = (event)=> {
+                if (event.data.close === true) {
+                    kWorker.terminate();
+                    workers.splice(workers.indexOf(kWorker),1);
+                    if (!event.data.success) {
+                        showAlert('Unexpected error, see log');
+                        setStatusBarMessage(event.data.result, true);
+                    }
+                    if (event.data.errors > 0) {
+                        showAlert(`${inputDir} folder processed with errors (${event.data.total} class files / ${event.data.errors} errors)`);
+                        setStatusBarMessage(`${inputDir} > Folder processed with errors (${event.data.total} class files / ${event.data.errors} errors)`);
+                    }
+                    else {
+                        showAlert(`${inputDir} folder processed succesfully (${event.data.total} class files)`);
+                        setStatusBarMessage(`${inputDir} > Folder processed succesfully (${event.data.total} class files)`);
+                    }
+                }
+                else if (event.data.success) {
+                    setStatusBarMessage(event.data.result + ' > Disassembled');
+                }
+                else {
+                    setStatusBarMessage(`${event.data.file} > ${event.data.result}`, true);
+                }
+            };
+            kWorker.postMessage({ op:'disassembleFolder', inputDir:inputDir, outputDir:outputDir, roundtrip:roundtrip, overwrite:overwrite, recursive:recursive });
+        } catch (e) {
+            showAlert('Disassemble folder failed: ' + e.toString());
+            setStatusBarMessage('Disassemble folder failed: ' + e.toString(), true);
+            if (debug) console.log(e);
+        }
+    }
 
     function clearErrorGutterOnEmptyLines() {
         clearTimeout(changeTimer);
@@ -788,12 +1048,12 @@
 
         function printGenericError() {
             showAlert('Sorry, there was a problem, try later please.');
-            setStatusBarMessage('Update failed, try later.');
+            setStatusBarMessage('Update failed, try later.', true);
         }
 
         function printNetworkError() {
             showAlert('Sorry, there was a network error, check your connection and/or try later.');
-            setStatusBarMessage('Network error, update failed, check your connection and/or try later.');
+            setStatusBarMessage('Network error, update failed, check your connection and/or try later.', true);
         }
 
 
@@ -865,7 +1125,7 @@
     }
 
     function clearLog() {
-        logElement.querySelectorAll('pre').forEach(el=>{el.remove()});
+        logContentElement.querySelectorAll('pre').forEach(el=>{el.remove()});
         toggleLog();
     }
 

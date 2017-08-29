@@ -16,8 +16,8 @@
 // along with Krakatau. If not, see <http://www.gnu.org/licenses/>.
 
 'use strict'
-const toFloat64 = require('math-float64-from-words')
-const toFloat32 = require('math-float32-from-word')
+const toFloat64 = require('../deps/math-float64-from-words/lib/index.js');
+const toFloat32 = require('../deps/math-float32-from-word/lib/index.js');
 
 const {int, range, M31, M32, M63, M64} = require('../std')
 

@@ -16,7 +16,7 @@
 // along with Krakatau. If not, see <http://www.gnu.org/licenses/>.
 
 'use strict'
-const int = require('big-integer')
+const int = require('../BigInteger/BigInteger.min');
 
 const INTS = {
     M32: int(1).shiftLeft(32),
