@@ -1,0 +1,6 @@
+
+- Pack src/app contents into app.asar
+- Pack src/volcano contents into volcano.asar
+- Put app.asar and volcano.asar into electron´s resource folder
+- Rebrand electron
+
