@@ -70,7 +70,8 @@ function createMainWindow(argFile) {
         show: false,
         webPreferences: {
             nodeIntegrationInWorker: true
-        }
+        },
+        icon: __dirname + '/volcano.png'
     });
 
     if (debug) win.webContents.openDevTools({detach:true});
